@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "496539035044",
+    "project_id": "streamsky-52c21",
+    "storage_bucket": "streamsky-52c21.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:496539035044:android:011d061f4c53fc37c40d31",
+        "android_client_info": {
+          "package_name": "com.streamsky"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB41U5ryzRuFk2fjEVYx8N_mNLTi0311BE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
