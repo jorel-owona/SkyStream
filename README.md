@@ -1,97 +1,51 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# StreamSky 🚀
 
-# Getting Started
+Bienvenue sur le dépôt de **StreamSky**, une application sociale React Native Premium conçue pour offrir une expérience fluide et immersive semblable à TikTok.
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+## 📱 Fonctionnalités Actuelles
 
-## Step 1: Start Metro
+- **Design Premium UI/UX** : Intégration d'un thème sombre professionnel inspiré des "skills" de design avancés (Glassmorphism, typographies Pro Max, couleurs vibrantes basées sur le logo).
+- **Navigation Fluide** : Un menu inférieur avec `react-navigation` incluant des icônes vectorielles (`FontAwesome5`).
+- **Caméra Intégrée** : Une fonctionnalité de capture utilisant `react-native-vision-camera` (boostée par nitro-modules), avec gestion des permissions sur Android.
+- **Profil Utilisateur** : Une page de profil complète incluant les statistiques de l'utilisateur, la biographie et une structure en grille pour les vidéos.
 
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
+## 🛠 Structure du Projet
 
-To start the Metro dev server, run the following command from the root of your React Native project:
+Voici l'organisation principale du code source (`/src`) :
 
-```sh
-# Using npm
-npm start
-
-# OR using Yarn
-yarn start
+```
+/src
+ ├── /screens
+ │    ├── HomeScreen.tsx    # Fil d'actualité (Pour Vous), gestion des actions (Likes, Commentaires, Partages)
+ │    ├── ProfileScreen.tsx # Page de profil utilisateur avec ses statistiques et ses vidéos
+ │    └── CameraScreen.tsx  # Interface d'enregistrement vidéo avec react-native-vision-camera
+ ├── /theme
+ │    ├── colors.ts         # Tokens de couleurs globaux (Fond sombre, accents Cyan et Rose)
+ │    └── typography.ts     # Configuration typographique Premium (Tailles, Graisses)
+ └── AppNavigator.tsx       # Configuration du BottomTabNavigator (Routage principal)
 ```
 
-## Step 2: Build and run your app
+## ⏳ Ce qu'il reste à faire (Roadmap)
 
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
+Le projet est configuré avec Firebase (`@react-native-firebase/app`, `auth`, `storage`), mais l'implémentation logique de la base de données n'est pas encore terminée.
 
-### Android
+**À implémenter :**
+1. **Firebase Authentication** : Permettre aux utilisateurs de créer un compte et de se connecter.
+2. **Firebase Firestore / Storage** :
+   - Sauvegarder les vidéos enregistrées par la caméra vers Firebase Storage.
+   - Créer une base de données Firestore pour lier les URLs des vidéos aux profils des utilisateurs.
+   - Remplacer le "Lecteur Vidéo StreamSky" (placeholder dans `HomeScreen`) par un véritable composant de lecture (`react-native-video`) qui lit les flux depuis Firebase.
+3. **Système de commentaires et de likes** en temps réel connecté à Firestore.
 
-```sh
-# Using npm
-npm run android
+## 🚀 Installation & Lancement
 
-# OR using Yarn
-yarn android
-```
-
-### iOS
-
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
-
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
-
-```sh
-bundle install
-```
-
-Then, and every time you update your native dependencies, run:
-
-```sh
-bundle exec pod install
-```
-
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
-
-```sh
-# Using npm
-npm run ios
-
-# OR using Yarn
-yarn ios
-```
-
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
-
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
-
-## Step 3: Modify your app
-
-Now that you have successfully run the app, let's make changes!
-
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
-
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
-
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
-
-## Congratulations! :tada:
-
-You've successfully run and modified your React Native App. :partying_face:
-
-### Now what?
-
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
-
-# Troubleshooting
-
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
-
-# Learn More
-
-To learn more about React Native, take a look at the following resources:
-
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+1. Clonez ce dépôt.
+2. Installez les dépendances :
+   ```bash
+   npm install
+   ```
+3. Lancer l'application sous Android :
+   ```bash
+   npx react-native run-android
+   ```
+   *(Assurez-vous d'avoir un téléphone branché en ADB ou un émulateur ouvert)*
