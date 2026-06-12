@@ -108,8 +108,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!GoogleSignin || !GOOGLE_WEB_CLIENT_ID) {
         setLoading(false);
         Alert.alert(
-          'Configuration Google manquante',
-          'Veuillez configurer la clé Web Client ID Firebase dans AuthContext.tsx pour lancer l\'authentification réelle.'
+          'Mode Simulation (Configuration Google manquante)',
+          'La clé Web Client ID Firebase est manquante dans AuthContext.tsx. Connexion en mode simulation avec le compte de test @jorel_owona.',
+          [
+            {
+              text: 'Continuer',
+              onPress: () => {
+                setUser({
+                  uid: 'simulated_jorel_owona',
+                  displayName: 'Jorel Owona',
+                  email: 'jorel@streamsky.app',
+                  photoURL: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
+                  isGuest: false,
+                  bio: 'Créateur de contenu sur StreamSky. 🔥',
+                });
+              }
+            }
+          ]
         );
         return;
       }
@@ -144,8 +159,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.error('Google Sign In Error:', error);
       setLoading(false);
       Alert.alert(
-        'Erreur de connexion Google',
-        error.message || 'Impossible de se connecter avec Google. Veuillez vérifier votre connexion et les Google Play Services.'
+        'Mode Simulation (Erreur Google Sign-In)',
+        `Une erreur est survenue lors de la connexion Google (${error.message || error}). Connexion en mode simulation avec le compte de test @jorel_owona.`,
+        [
+          {
+            text: 'Continuer',
+            onPress: () => {
+              setUser({
+                uid: 'simulated_jorel_owona',
+                displayName: 'Jorel Owona',
+                email: 'jorel@streamsky.app',
+                photoURL: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
+                isGuest: false,
+                bio: 'Créateur de contenu sur StreamSky. 🔥',
+              });
+            }
+          }
+        ]
       );
     }
   };

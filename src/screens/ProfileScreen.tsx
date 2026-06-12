@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, Image, ScrollView, TouchableOpacity, Dimensions
 import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
 import Icon from 'react-native-vector-icons/Ionicons';
+import Video from 'react-native-video';
 import { useAuth } from '../context/AuthContext';
 import { sampleVideos, VideoItem } from '../services/CloudinaryService';
 
@@ -25,6 +26,9 @@ const ProfileScreen = () => {
   const [editName, setEditName] = useState(user?.displayName || '');
   const [editBio, setEditBio] = useState(user?.bio || '');
   const [editPhotoURL, setEditPhotoURL] = useState(user?.photoURL || PRESET_AVATARS[0]);
+
+  // Video Preview State
+  const [previewVideo, setPreviewVideo] = useState<VideoItem | null>(null);
 
   const isGuest = user?.isGuest ?? true;
   const suivisCount = isGuest ? 0 : 124;
@@ -276,7 +280,7 @@ const ProfileScreen = () => {
         ) : (
           <View style={styles.gridContainer}>
             {gridVideos.map((video) => (
-              <TouchableOpacity key={video.id} style={styles.gridItem}>
+              <TouchableOpacity key={video.id} style={styles.gridItem} onPress={() => setPreviewVideo(video)}>
                 <Image source={{ uri: video.thumbnailUrl || getCloudinaryThumbnail(video.videoUrl) }} style={styles.gridThumbnail} />
                 <View style={styles.gridLikesOverlay}>
                   <Icon name="play-outline" size={12} color={colors.white} style={styles.playIcon} />
@@ -362,6 +366,41 @@ const ProfileScreen = () => {
             </ScrollView>
           </View>
         </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Video Preview Modal */}
+      <Modal
+        visible={previewVideo !== null}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setPreviewVideo(null)}
+      >
+        <View style={styles.previewOverlay}>
+          <TouchableOpacity 
+            style={styles.previewCloseBtn} 
+            onPress={() => setPreviewVideo(null)}
+          >
+            <Icon name="close" size={28} color={colors.white} />
+          </TouchableOpacity>
+          
+          {previewVideo && (
+            <View style={styles.previewVideoContainer}>
+              <Video
+                source={{ uri: previewVideo.videoUrl }}
+                style={styles.previewVideoPlayer}
+                resizeMode="contain"
+                repeat={true}
+                paused={false}
+                muted={false}
+                onError={(e) => console.log('Preview Video Error:', e)}
+              />
+              <View style={styles.previewDetails}>
+                <Text style={styles.previewUser}>@{previewVideo.username}</Text>
+                <Text style={styles.previewDesc}>{previewVideo.description}</Text>
+              </View>
+            </View>
+          )}
+        </View>
       </Modal>
     </View>
   );
@@ -673,6 +712,49 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     paddingBottom: 12,
     textAlignVertical: 'top',
+  },
+  previewOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.95)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  previewCloseBtn: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 50 : 20,
+    right: 20,
+    zIndex: 10,
+    padding: 8,
+  },
+  previewVideoContainer: {
+    width: '100%',
+    height: '80%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  previewVideoPlayer: {
+    width: '100%',
+    height: '100%',
+  },
+  previewDetails: {
+    position: 'absolute',
+    bottom: 20,
+    left: 20,
+    right: 20,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    padding: 12,
+    borderRadius: 8,
+  },
+  previewUser: {
+    color: colors.white,
+    fontWeight: '700',
+    fontSize: 14,
+    marginBottom: 4,
+  },
+  previewDesc: {
+    color: colors.white,
+    fontSize: 13,
   },
 });
 

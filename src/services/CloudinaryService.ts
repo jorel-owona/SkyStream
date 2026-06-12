@@ -42,7 +42,7 @@ export const getCloudinaryVideoUrl = (
 export const sampleVideos: VideoItem[] = [
   {
     id: 'vid-user-1',
-    videoUrl: 'https://res.cloudinary.com/dwfvxelne/video/upload/f_mp4,q_auto/v1781006675/introduction_gewbzq.mp4',
+    videoUrl: 'https://res.cloudinary.com/dwfvxelne/video/upload/f_auto,q_auto/v1781006675/introduction_gewbzq.m3u8',
     username: 'jorel_owona',
     description: 'Introduction officielle de StreamSky ! 🚀 Découvrez le futur du partage vidéo. #streamsky #introduction #m3u8 #hls',
     songName: 'StreamSky Intro (Son original)',
