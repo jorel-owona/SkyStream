@@ -1,79 +1,368 @@
-import React from 'react';
-import { View, Text, StyleSheet, Image, ScrollView, TouchableOpacity, Dimensions } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, Image, ScrollView, TouchableOpacity, Dimensions, Alert, Modal, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
 import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
-import Icon from 'react-native-vector-icons/FontAwesome5';
+import Icon from 'react-native-vector-icons/Ionicons';
+import { useAuth } from '../context/AuthContext';
+import { sampleVideos, VideoItem } from '../services/CloudinaryService';
 
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
+
+const PRESET_AVATARS = [
+  'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+  'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
+  'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150',
+  'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
+  'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150',
+];
 
 const ProfileScreen = () => {
+  const { user, logout, updateProfile, bookmarkedIds, likedIds } = useAuth();
+  const [activeProfileTab, setActiveProfileTab] = useState<'posts' | 'private' | 'bookmarks' | 'likes'>('posts');
+  
+  // Edit Profile Modal States
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [editName, setEditName] = useState(user?.displayName || '');
+  const [editBio, setEditBio] = useState(user?.bio || '');
+  const [editPhotoURL, setEditPhotoURL] = useState(user?.photoURL || PRESET_AVATARS[0]);
+
+  const isGuest = user?.isGuest ?? true;
+  const suivisCount = isGuest ? 0 : 124;
+  const abonneesCount = isGuest ? 0 : 374;
+  const likesCount = isGuest ? 0 : likedIds.length + 842;
+
+  const formattedUsername = user?.displayName
+    ? `@${user.displayName.toLowerCase().replace(/\s+/g, '_')}`
+    : '@streamsky_user';
+
+  const handleLogout = () => {
+    Alert.alert(
+      'Déconnexion',
+      'Êtes-vous sûr de vouloir vous déconnecter ?',
+      [
+        { text: 'Annuler', style: 'cancel' },
+        { text: 'Se déconnecter', style: 'destructive', onPress: logout },
+      ]
+    );
+  };
+
+  const handleInviteFriends = () => {
+    if (isGuest) {
+      Alert.alert(
+        'Connexion requise',
+        'Veuillez vous connecter ou vous inscrire pour inviter des amis.',
+        [
+          { text: 'Annuler', style: 'cancel' },
+          { text: 'Se connecter / S\'inscrire', onPress: logout },
+        ]
+      );
+      return;
+    }
+    Alert.alert(
+      'Inviter des amis',
+      'Partagez l\'application : Envoyez un lien d\'invitation StreamSky à vos proches ! 🤝📱',
+      [{ text: 'Génial !' }]
+    );
+  };
+
+  const handleInstagramLink = () => {
+    if (isGuest) {
+      Alert.alert(
+        'Connexion requise',
+        'Veuillez vous connecter ou vous inscrire pour associer votre compte Instagram.',
+        [
+          { text: 'Annuler', style: 'cancel' },
+          { text: 'Se connecter / S\'inscrire', onPress: logout },
+        ]
+      );
+      return;
+    }
+    Alert.alert(
+      'Instagram',
+      'Associer votre compte Instagram pour partager directement vos créations.',
+      [{ text: 'Fermer' }]
+    );
+  };
+
+  const openEditProfile = () => {
+    if (isGuest) {
+      Alert.alert(
+        'Connexion requise',
+        'Veuillez vous connecter ou vous inscrire pour personnaliser votre profil.',
+        [
+          { text: 'Annuler', style: 'cancel' },
+          { text: 'Se connecter / S\'inscrire', onPress: logout },
+        ]
+      );
+      return;
+    }
+    setEditName(user?.displayName || '');
+    setEditBio(user?.bio || '');
+    setEditPhotoURL(user?.photoURL || PRESET_AVATARS[0]);
+    setEditModalVisible(true);
+  };
+
+  const handleSaveProfile = async () => {
+    if (!editName.trim()) {
+      Alert.alert('Erreur', 'Le nom ne peut pas être vide.');
+      return;
+    }
+    await updateProfile(editName.trim(), editBio.trim(), editPhotoURL);
+    setEditModalVisible(false);
+  };
+
+  const getCloudinaryThumbnail = (videoUrl: string) => {
+    try {
+      if (videoUrl.includes('/video/upload/')) {
+        return videoUrl
+          .replace('.mp4', '.jpg')
+          .replace('/video/upload/', '/video/upload/c_fill,w_250,h_350,so_0/');
+      }
+      return 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=200';
+    } catch {
+      return 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=200';
+    }
+  };
+
+  const getGridVideos = (): VideoItem[] => {
+    if (isGuest) return []; // For guest, everything is at zero/empty!
+    if (activeProfileTab === 'posts') {
+      return sampleVideos;
+    } else if (activeProfileTab === 'bookmarks') {
+      return sampleVideos.filter(video => bookmarkedIds.includes(video.id));
+    } else if (activeProfileTab === 'likes') {
+      return sampleVideos.filter(video => likedIds.includes(video.id));
+    }
+    return [];
+  };
+
+  const gridVideos = getGridVideos();
+
   return (
     <View style={styles.container}>
+      {/* Header */}
       <View style={styles.header}>
-        <Icon name="user-plus" size={20} color={colors.text} />
-        <Text style={typography.h2}>Profile</Text>
-        <Icon name="bars" size={20} color={colors.text} />
+        <TouchableOpacity style={styles.headerIcon} onPress={handleInviteFriends}>
+          <Icon name="person-add-outline" size={22} color={colors.white} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>{user?.displayName || 'Profil'}</Text>
+        <TouchableOpacity style={styles.headerIcon} onPress={handleLogout}>
+          <Icon name="log-out-outline" size={24} color={colors.white} />
+        </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {/* Profile Info */}
         <View style={styles.profileInfo}>
           <View style={styles.avatarContainer}>
-            <View style={styles.avatarPlaceholder}>
-              <Icon name="user" size={40} color={colors.background} />
-            </View>
-            <TouchableOpacity style={styles.addAvatarButton}>
-              <Icon name="plus" size={12} color={colors.white} />
+            {user?.photoURL ? (
+              <Image source={{ uri: user.photoURL }} style={styles.avatarImage} />
+            ) : (
+              <View style={styles.avatarPlaceholder}>
+                <Icon name="person" size={50} color={colors.background} />
+              </View>
+            )}
+            <TouchableOpacity style={styles.addAvatarButton} onPress={openEditProfile}>
+              <Icon name="add" size={14} color={colors.white} />
             </TouchableOpacity>
           </View>
           
-          <Text style={[typography.h3, styles.username]}>@streamsky_user</Text>
+          <Text style={styles.username}>{formattedUsername}</Text>
 
+          {/* Followers / Stats */}
           <View style={styles.statsContainer}>
             <View style={styles.statItem}>
-              <Text style={typography.h2}>77</Text>
-              <Text style={typography.caption}>Suivis</Text>
+              <Text style={styles.statCount}>{suivisCount}</Text>
+              <Text style={styles.statLabel}>Abonnements</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
-              <Text style={typography.h2}>377</Text>
-              <Text style={typography.caption}>Followers</Text>
+              <Text style={styles.statCount}>{abonneesCount}</Text>
+              <Text style={styles.statLabel}>Abonnés</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
-              <Text style={typography.h2}>457</Text>
-              <Text style={typography.caption}>J'aime</Text>
+              <Text style={styles.statCount}>{likesCount}</Text>
+              <Text style={styles.statLabel}>J'aime</Text>
             </View>
           </View>
 
+          {/* Edit Profile Action Buttons */}
           <View style={styles.actionButtons}>
-            <TouchableOpacity style={styles.editButton}>
-              <Text style={typography.bodyBold}>Modifier le profil</Text>
+            <TouchableOpacity style={styles.editButton} onPress={openEditProfile}>
+              <Text style={styles.editButtonText}>Modifier le profil</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.iconButton}>
-              <Icon name="instagram" size={20} color={colors.text} />
+            <TouchableOpacity style={styles.iconButton} onPress={handleInstagramLink}>
+              <Icon name="logo-instagram" size={18} color={colors.white} />
             </TouchableOpacity>
           </View>
           
-          <Text style={[typography.body, styles.bio]}>Bienvenue sur mon profil StreamSky ! ✨</Text>
+          <Text style={styles.bio}>
+            {user?.bio || (isGuest 
+              ? "Bienvenue sur mon profil StreamSky ! ✨" 
+              : "Nouveau créateur de contenu sur StreamSky. Suivez mes prochaines vidéos ! 🎬🔥"
+            )}
+          </Text>
         </View>
 
+        {/* Tab Selection */}
         <View style={styles.tabsContainer}>
-          <View style={[styles.tab, styles.activeTab]}>
-            <Icon name="border-all" size={24} color={colors.text} />
-          </View>
-          <View style={styles.tab}>
-            <Icon name="heart" size={24} color={colors.textSecondary} />
-          </View>
+          <TouchableOpacity 
+            style={[styles.tab, activeProfileTab === 'posts' && styles.activeTab]}
+            onPress={() => setActiveProfileTab('posts')}
+          >
+            <Icon name="grid-outline" size={22} color={activeProfileTab === 'posts' ? colors.white : colors.textSecondary} />
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={[styles.tab, activeProfileTab === 'private' && styles.activeTab]}
+            onPress={() => setActiveProfileTab('private')}
+          >
+            <Icon name="lock-closed-outline" size={22} color={activeProfileTab === 'private' ? colors.white : colors.textSecondary} />
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={[styles.tab, activeProfileTab === 'bookmarks' && styles.activeTab]}
+            onPress={() => setActiveProfileTab('bookmarks')}
+          >
+            <Icon name="bookmark-outline" size={22} color={activeProfileTab === 'bookmarks' ? colors.white : colors.textSecondary} />
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={[styles.tab, activeProfileTab === 'likes' && styles.activeTab]}
+            onPress={() => setActiveProfileTab('likes')}
+          >
+            <Icon name="heart-outline" size={22} color={activeProfileTab === 'likes' ? colors.white : colors.textSecondary} />
+          </TouchableOpacity>
         </View>
 
-        <View style={styles.gridContainer}>
-          {[1, 2, 3, 4, 5, 6].map((item) => (
-            <View key={item} style={styles.gridItem}>
-              <Icon name="play" size={24} color={colors.textSecondary} style={styles.playIcon} />
-            </View>
-          ))}
-        </View>
+        {/* Dynamic Video Grid Content */}
+        {activeProfileTab === 'private' ? (
+          <View style={styles.emptyGridContainer}>
+            <Icon name="lock-closed" size={48} color="rgba(255, 255, 255, 0.2)" />
+            <Text style={styles.emptyGridText}>Vidéos privées</Text>
+            <Text style={styles.emptyGridSub}>Vos vidéos privées ne sont visibles que par vous.</Text>
+          </View>
+        ) : gridVideos.length === 0 ? (
+          <View style={styles.emptyGridContainer}>
+            <Icon 
+              name={
+                activeProfileTab === 'bookmarks' 
+                  ? 'bookmark' 
+                  : activeProfileTab === 'likes' 
+                  ? 'heart' 
+                  : 'videocam'
+              } 
+              size={48} 
+              color="rgba(255, 255, 255, 0.2)" 
+            />
+            <Text style={styles.emptyGridText}>
+              {activeProfileTab === 'bookmarks' 
+                ? 'Aucun favori pour l\'instant' 
+                : activeProfileTab === 'likes' 
+                ? 'Aucune vidéo aimée' 
+                : 'Aucune publication'
+              }
+            </Text>
+            <Text style={styles.emptyGridSub}>
+              {activeProfileTab === 'bookmarks' 
+                ? 'Enregistrez des vidéos dans les favoris pour les afficher.' 
+                : activeProfileTab === 'likes' 
+                ? 'Aimez des vidéos pour les afficher ici.' 
+                : 'Vos créations s\'afficheront ici.'
+              }
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.gridContainer}>
+            {gridVideos.map((video) => (
+              <TouchableOpacity key={video.id} style={styles.gridItem}>
+                <Image source={{ uri: video.thumbnailUrl || getCloudinaryThumbnail(video.videoUrl) }} style={styles.gridThumbnail} />
+                <View style={styles.gridLikesOverlay}>
+                  <Icon name="play-outline" size={12} color={colors.white} style={styles.playIcon} />
+                  <Text style={styles.gridLikesText}>{video.likes}</Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
       </ScrollView>
+
+      {/* Edit Profile Modal */}
+      <Modal
+        visible={editModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setEditModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
+          <View style={styles.modalContent}>
+            {/* Modal Header */}
+            <View style={styles.modalHeader}>
+              <TouchableOpacity onPress={() => setEditModalVisible(false)}>
+                <Text style={styles.cancelButtonText}>Annuler</Text>
+              </TouchableOpacity>
+              <Text style={styles.modalTitle}>Modifier le profil</Text>
+              <TouchableOpacity onPress={handleSaveProfile}>
+                <Text style={styles.saveButtonText}>Enregistrer</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView contentContainerStyle={styles.modalScroll} showsVerticalScrollIndicator={false}>
+              {/* Profile Image Select */}
+              <View style={styles.editAvatarSection}>
+                <Image source={{ uri: editPhotoURL }} style={styles.editAvatarPreview} />
+                <Text style={styles.editAvatarLabel}>Choisissez une photo de profil :</Text>
+                <View style={styles.presetAvatarsContainer}>
+                  {PRESET_AVATARS.map((url, i) => (
+                    <TouchableOpacity 
+                      key={i} 
+                      onPress={() => setEditPhotoURL(url)}
+                      style={[
+                        styles.presetAvatarBtn,
+                        editPhotoURL === url && styles.presetAvatarBtnSelected
+                      ]}
+                    >
+                      <Image source={{ uri: url }} style={styles.presetAvatarThumb} />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+
+              {/* Input Nom */}
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputLabel}>Nom d'affichage</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={editName}
+                  onChangeText={setEditName}
+                  placeholder="Nom"
+                  placeholderTextColor="rgba(255,255,255,0.4)"
+                  maxLength={30}
+                />
+              </View>
+
+              {/* Input Bio */}
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputLabel}>Biographie (Bio)</Text>
+                <TextInput
+                  style={[styles.textInput, styles.bioInput]}
+                  value={editBio}
+                  onChangeText={setEditBio}
+                  placeholder="Écrivez une courte bio..."
+                  placeholderTextColor="rgba(255,255,255,0.4)"
+                  multiline={true}
+                  numberOfLines={3}
+                  maxLength={80}
+                />
+              </View>
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 };
@@ -87,27 +376,42 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 50,
-    paddingBottom: 15,
-    borderBottomWidth: 1,
+    paddingHorizontal: 16,
+    height: 56,
+    borderBottomWidth: 0.5,
     borderBottomColor: colors.surfaceLight,
   },
+  headerIcon: {
+    padding: 6,
+  },
+  headerTitle: {
+    ...typography.h2,
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.white,
+  },
   scrollContent: {
-    paddingBottom: 20,
+    paddingBottom: 40,
   },
   profileInfo: {
     alignItems: 'center',
-    paddingTop: 20,
+    paddingTop: 24,
   },
   avatarContainer: {
     position: 'relative',
-    marginBottom: 10,
+    marginBottom: 12,
+  },
+  avatarImage: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    borderWidth: 1.5,
+    borderColor: colors.surfaceLight,
   },
   avatarPlaceholder: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
+    width: 96,
+    height: 96,
+    borderRadius: 48,
     backgroundColor: colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
@@ -116,7 +420,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 0,
     right: 0,
-    backgroundColor: colors.secondary,
+    backgroundColor: colors.primary,
     width: 28,
     height: 28,
     borderRadius: 14,
@@ -126,52 +430,82 @@ const styles = StyleSheet.create({
     borderColor: colors.background,
   },
   username: {
-    marginBottom: 15,
+    ...typography.h3,
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.white,
+    marginBottom: 16,
   },
   statsContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: 20,
+    width: '100%',
   },
   statItem: {
     alignItems: 'center',
-    width: 80,
+    width: 100,
+  },
+  statCount: {
+    color: colors.white,
+    fontSize: 17,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  statLabel: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '500',
   },
   statDivider: {
-    width: 1,
-    height: 20,
-    backgroundColor: colors.surfaceLight,
+    width: 0.5,
+    height: 14,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
   },
   actionButtons: {
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: 10,
-    marginBottom: 20,
+    gap: 8,
+    marginBottom: 16,
+    width: '100%',
+    paddingHorizontal: 24,
   },
   editButton: {
-    backgroundColor: colors.surfaceLight,
-    paddingHorizontal: 30,
+    flex: 1,
+    backgroundColor: colors.surface,
     paddingVertical: 10,
-    borderRadius: 5,
-  },
-  iconButton: {
-    backgroundColor: colors.surfaceLight,
-    paddingHorizontal: 15,
-    paddingVertical: 10,
-    borderRadius: 5,
+    borderRadius: 4,
+    alignItems: 'center',
     justifyContent: 'center',
   },
+  editButtonText: {
+    color: colors.white,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  iconButton: {
+    backgroundColor: colors.surface,
+    width: 40,
+    borderRadius: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   bio: {
+    color: colors.white,
+    fontSize: 13,
     textAlign: 'center',
-    paddingHorizontal: 30,
-    marginBottom: 20,
+    paddingHorizontal: 40,
+    lineHeight: 18,
+    marginBottom: 16,
   },
   tabsContainer: {
     flexDirection: 'row',
-    borderTopWidth: 1,
+    borderTopWidth: 0.5,
     borderTopColor: colors.surfaceLight,
-    borderBottomWidth: 1,
+    borderBottomWidth: 0.5,
     borderBottomColor: colors.surfaceLight,
+    backgroundColor: colors.background,
   },
   tab: {
     flex: 1,
@@ -179,23 +513,166 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   activeTab: {
-    borderBottomWidth: 2,
-    borderBottomColor: colors.primary,
+    borderBottomWidth: 1.5,
+    borderBottomColor: colors.white,
   },
   gridContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    backgroundColor: colors.black,
+    paddingTop: 1,
   },
   gridItem: {
-    width: width / 3 - 2,
-    height: (width / 3) * 1.3,
+    width: width / 3 - 0.7,
+    height: (width / 3) * 1.35,
     backgroundColor: colors.surface,
-    margin: 1,
-    justifyContent: 'center',
+    marginRight: 1,
+    marginBottom: 1,
+    position: 'relative',
+  },
+  gridThumbnail: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  gridLikesOverlay: {
+    position: 'absolute',
+    bottom: 6,
+    left: 6,
+    flexDirection: 'row',
     alignItems: 'center',
   },
   playIcon: {
-    opacity: 0.5,
+    marginRight: 4,
+    textShadowColor: 'rgba(0, 0, 0, 0.4)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  gridLikesText: {
+    color: colors.white,
+    fontSize: 11,
+    fontWeight: '600',
+    textShadowColor: 'rgba(0, 0, 0, 0.4)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  // Empty states
+  emptyGridContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 60,
+    paddingHorizontal: 32,
+  },
+  emptyGridText: {
+    color: colors.white,
+    fontSize: 15,
+    fontWeight: '700',
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  emptyGridSub: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    textAlign: 'center',
+  },
+  // Modal Edit Styles
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+  },
+  modalContent: {
+    height: height * 0.8,
+    backgroundColor: '#1E152E',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    overflow: 'hidden',
+  },
+  modalHeader: {
+    height: 56,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    borderBottomWidth: 0.5,
+    borderBottomColor: 'rgba(255,255,255,0.1)',
+  },
+  modalTitle: {
+    color: colors.white,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  cancelButtonText: {
+    color: colors.textSecondary,
+    fontSize: 15,
+  },
+  saveButtonText: {
+    color: colors.primary,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  modalScroll: {
+    padding: 20,
+  },
+  editAvatarSection: {
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  editAvatarPreview: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    borderWidth: 2,
+    borderColor: colors.primary,
+    marginBottom: 16,
+  },
+  editAvatarLabel: {
+    color: colors.white,
+    fontSize: 13,
+    marginBottom: 10,
+    fontWeight: '600',
+  },
+  presetAvatarsContainer: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  presetAvatarBtn: {
+    padding: 2,
+    borderRadius: 22,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  presetAvatarBtnSelected: {
+    borderColor: colors.primary,
+  },
+  presetAvatarThumb: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+  },
+  inputContainer: {
+    marginBottom: 20,
+  },
+  inputLabel: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    marginBottom: 8,
+    fontWeight: '600',
+  },
+  textInput: {
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderRadius: 8,
+    height: 48,
+    paddingHorizontal: 16,
+    color: colors.white,
+    fontSize: 14,
+  },
+  bioInput: {
+    height: 80,
+    paddingTop: 12,
+    paddingBottom: 12,
+    textAlignVertical: 'top',
   },
 });
 

@@ -1,119 +1,246 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { NavigationContainer } from '@react-navigation/native';
-import { View, Text, StyleSheet } from 'react-native';
-import Icon from 'react-native-vector-icons/FontAwesome5';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Modal } from 'react-native';
+import Icon from 'react-native-vector-icons/Ionicons';
 
 import HomeScreen from './screens/HomeScreen';
+import FriendsScreen from './screens/FriendsScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import CameraScreen from './screens/CameraScreen';
+import LandingScreen from './screens/LandingScreen';
+import MessagesScreen from './screens/MessagesScreen';
 import { colors } from './theme/colors';
+import { typography } from './theme/typography';
+import { useAuth } from './context/AuthContext';
 
 const Tab = createBottomTabNavigator();
 
-const PlaceholderScreen = ({ name }: { name: string }) => (
-  <View style={styles.placeholder}>
-    <Text style={styles.text}>{name}</Text>
-  </View>
-);
+const DummyScreen = () => null;
 
 const AppNavigator = () => {
+  const { user, loading, isCameraOpen, setIsCameraOpen } = useAuth();
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
+
+  // Custom component for the middle TikTok plus button
+  const TikTokPlusButton = () => (
+    <View style={styles.createButtonContainer}>
+      <View style={[styles.createButtonSide, { backgroundColor: colors.primary, left: -3 }]} />
+      <View style={[styles.createButtonSide, { backgroundColor: colors.secondary, right: -3 }]} />
+      <View style={styles.createButtonCenter}>
+        <Icon name="add" size={20} color={colors.black} />
+      </View>
+    </View>
+  );
+
   return (
     <NavigationContainer>
-      <Tab.Navigator
-        screenOptions={{
-          headerShown: false,
-          tabBarStyle: {
-            backgroundColor: colors.background,
-            borderTopWidth: 1,
-            borderTopColor: colors.surfaceLight,
-            elevation: 0,
-            height: 60,
-            paddingBottom: 10,
-          },
-          tabBarActiveTintColor: colors.primary,
-          tabBarInactiveTintColor: colors.textSecondary,
-        }}
-      >
-        <Tab.Screen 
-          name="Home" 
-          component={HomeScreen} 
-          options={{
-            tabBarIcon: ({ color }) => <Icon name="home" size={20} color={color} />
-          }}
-        />
-        <Tab.Screen 
-          name="Discover" 
-          component={() => <PlaceholderScreen name="Discover" />} 
-          options={{
-            tabBarIcon: ({ color }) => <Icon name="search" size={20} color={color} />
-          }}
-        />
-        <Tab.Screen 
-          name="Create" 
-          component={CameraScreen} 
-          options={{
-            tabBarIcon: () => (
-              <View style={styles.createButtonOuter}>
-                <View style={styles.createButtonInner}>
-                  <Icon name="plus" size={16} color={colors.white} />
-                </View>
-              </View>
-            ),
-            tabBarLabel: () => null,
-            tabBarStyle: { display: 'none' } // Hide tab bar when in camera
-          }}
-        />
-        <Tab.Screen 
-          name="Inbox" 
-          component={() => <PlaceholderScreen name="Inbox" />} 
-          options={{
-            tabBarIcon: ({ color }) => <Icon name="comment-dots" size={20} color={color} />
-          }}
-        />
-        <Tab.Screen 
-          name="Profile" 
-          component={ProfileScreen} 
-          options={{
-            tabBarIcon: ({ color }) => <Icon name="user" size={20} color={color} />
-          }}
-        />
-      </Tab.Navigator>
+      <View style={{ flex: 1 }}>
+        {user ? (
+          <>
+            <Tab.Navigator
+              initialRouteName={user.isGuest ? 'Accueil' : 'Profil'} // Home tab for guest, Profile for signed-in user
+              screenOptions={{
+                headerShown: false,
+                tabBarStyle: {
+                  backgroundColor: colors.black, // TikTok bottom bar is pure black
+                  borderTopWidth: 0.5,
+                  borderTopColor: 'rgba(255, 255, 255, 0.1)',
+                  height: 60,
+                  paddingBottom: 8,
+                  paddingTop: 4,
+                },
+                tabBarActiveTintColor: colors.white, // Active label is white
+                tabBarInactiveTintColor: 'rgba(255, 255, 255, 0.5)', // Inactive is grey
+                tabBarLabelStyle: {
+                  fontSize: 10,
+                  fontWeight: '600',
+                  marginTop: 2,
+                },
+              }}
+            >
+              <Tab.Screen
+                name="Accueil"
+                component={HomeScreen}
+                options={{
+                  tabBarLabel: 'Accueil',
+                  tabBarIcon: ({ color, focused }) => (
+                    <Icon name={focused ? 'home' : 'home-outline'} size={24} color={color} />
+                  ),
+                }}
+              />
+              <Tab.Screen
+                name="Ami(e)s"
+                component={FriendsScreen}
+                options={{
+                  tabBarLabel: 'Ami(e)s',
+                  tabBarIcon: ({ color, focused }) => (
+                    <Icon name={focused ? 'people' : 'people-outline'} size={24} color={color} />
+                  ),
+                }}
+              />
+              <Tab.Screen
+                name="Create"
+                component={DummyScreen}
+                options={{
+                  tabBarLabel: () => null,
+                  tabBarIcon: () => <TikTokPlusButton />,
+                }}
+                listeners={{
+                  tabPress: (e) => {
+                    e.preventDefault();
+                    setIsCameraOpen(true); // Open Camera Modal overlay via global state
+                  },
+                }}
+              />
+              <Tab.Screen
+                name="Messages"
+                component={MessagesScreen}
+                options={{
+                  tabBarLabel: 'Messages',
+                  tabBarIcon: ({ color, focused }) => (
+                    <Icon name={focused ? 'chatbubble-ellipses' : 'chatbubble-ellipses-outline'} size={24} color={color} />
+                  ),
+                  tabBarBadge: 1, // Nice badge indicator like in mockup
+                  tabBarBadgeStyle: {
+                    backgroundColor: colors.secondary,
+                    color: colors.white,
+                    fontSize: 10,
+                    lineHeight: 14,
+                  },
+                }}
+              />
+              <Tab.Screen
+                name="Profil"
+                component={ProfileScreen}
+                options={{
+                  tabBarLabel: 'Profil',
+                  tabBarIcon: ({ color, focused }) => (
+                    <Icon name={focused ? 'person' : 'person-outline'} size={24} color={color} />
+                  ),
+                }}
+              />
+            </Tab.Navigator>
+
+            {/* Camera Overlay Modal */}
+            <Modal
+              visible={isCameraOpen}
+              animationType="slide"
+              onRequestClose={() => setIsCameraOpen(false)}
+            >
+              <CameraScreen onClose={() => setIsCameraOpen(false)} />
+            </Modal>
+          </>
+        ) : (
+          <LandingScreen />
+        )}
+      </View>
     </NavigationContainer>
   );
 };
 
 const styles = StyleSheet.create({
-  placeholder: {
+  loadingContainer: {
     flex: 1,
     backgroundColor: colors.background,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  text: {
-    color: colors.text,
-    fontSize: 20,
-  },
-  createButtonOuter: {
-    width: 50,
-    height: 35,
-    backgroundColor: colors.primary,
-    borderRadius: 10,
+  createButtonContainer: {
+    width: 46,
+    height: 30,
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 5,
-    borderLeftWidth: 4,
-    borderRightWidth: 4,
-    borderLeftColor: colors.primary,
-    borderRightColor: colors.secondary,
+    position: 'relative',
+    marginTop: 4,
   },
-  createButtonInner: {
-    width: '100%',
-    height: '100%',
+  createButtonSide: {
+    position: 'absolute',
+    width: 38,
+    height: 28,
+    borderRadius: 8,
+    top: 1,
+  },
+  createButtonCenter: {
+    width: 38,
+    height: 28,
     backgroundColor: colors.white,
     borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
+    zIndex: 10,
+  },
+  inboxContainer: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  inboxHeader: {
+    height: 60,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    borderBottomWidth: 0.5,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  inboxTitle: {
+    color: colors.white,
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  inboxHeaderIcons: {
+    flexDirection: 'row',
+    gap: 16,
+  },
+  headerIconBtn: {
+    padding: 4,
+  },
+  emptyInbox: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+  },
+  chatIconWrapper: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    backgroundColor: colors.surface,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  emptyTitle: {
+    color: colors.white,
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  emptySubtitle: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 24,
+  },
+  inboxButton: {
+    backgroundColor: colors.secondary,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 20,
+  },
+  inboxButtonText: {
+    color: colors.white,
+    fontWeight: '600',
+    fontSize: 14,
   },
 });
 
