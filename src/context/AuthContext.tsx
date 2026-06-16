@@ -41,6 +41,8 @@ interface AuthContextType {
   toggleLike: (videoId: string) => void;
   isCameraOpen: boolean;
   setIsCameraOpen: (open: boolean) => void;
+  cameraMode: 'video' | 'story';
+  setCameraMode: (mode: 'video' | 'story') => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -66,6 +68,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [bookmarkedIds, setBookmarkedIds] = useState<string[]>([]);
   const [likedIds, setLikedIds] = useState<string[]>([]);
   const [isCameraOpen, setIsCameraOpen] = useState(false);
+  const [cameraMode, setCameraMode] = useState<'video' | 'story'>('video');
 
   // Monitor real Firebase auth state changes
   useEffect(() => {
@@ -304,6 +307,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         toggleLike,
         isCameraOpen,
         setIsCameraOpen,
+        cameraMode,
+        setCameraMode,
       }}
     >
       {children}

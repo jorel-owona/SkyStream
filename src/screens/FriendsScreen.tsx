@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   Dimensions,
   SafeAreaView,
+  Alert,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import Video from 'react-native-video';
@@ -29,7 +30,7 @@ interface StoryItem {
 }
 
 const FriendsScreen = () => {
-  const { user, likedIds, toggleLike: toggleLikeContext, bookmarkedIds, toggleBookmark } = useAuth();
+  const { user, likedIds, toggleLike: toggleLikeContext, bookmarkedIds, toggleBookmark, setIsCameraOpen, setCameraMode } = useAuth();
   const [friendsFeed, setFriendsFeed] = useState<VideoItem[]>(sampleVideos.slice(1, 3)); // show a couple videos for friends
   const [activeVideoIndex, setActiveVideoIndex] = useState(0);
   
@@ -106,7 +107,18 @@ const FriendsScreen = () => {
 
   const renderStoryItem = (item: StoryItem) => {
     return (
-      <TouchableOpacity key={item.id} style={styles.storyContainer}>
+      <TouchableOpacity 
+        key={item.id} 
+        style={styles.storyContainer}
+        onPress={() => {
+          if (item.isSelf) {
+            setCameraMode('story');
+            setIsCameraOpen(true);
+          } else {
+            Alert.alert('Story', `Visualisation de la story de ${item.name} bientôt disponible ! 🌟`);
+          }
+        }}
+      >
         <View style={styles.avatarWrapper}>
           {item.hasStory ? (
             // Glowing border for active stories

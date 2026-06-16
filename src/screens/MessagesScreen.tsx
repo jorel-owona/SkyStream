@@ -84,7 +84,7 @@ const INITIAL_CHATS: Chat[] = [
 ];
 
 const MessagesScreen = () => {
-  const { user, logout } = useAuth();
+  const { user, logout, setIsCameraOpen, setCameraMode } = useAuth();
   const isGuest = user?.isGuest ?? true;
 
   const [chats, setChats] = useState<Chat[]>(INITIAL_CHATS);
@@ -173,7 +173,7 @@ const MessagesScreen = () => {
               resizeMode="contain"
             />
           </View>
-          <Text style={styles.emptyTitle}>Vos messages</Text>
+          <Text style={styles.emptyInboxTitle}>Vos messages</Text>
           <Text style={styles.emptySubtitle}>
             Les messages envoyés à vos amis s'affichent ici. Connectez-vous pour commencer à discuter.
           </Text>
@@ -225,21 +225,53 @@ const MessagesScreen = () => {
         <Text style={styles.sectionTitle}>En ligne ({chats.filter(c => c.online).length})</Text>
         <FlatList
           horizontal
-          data={chats}
+          data={[
+            {
+              id: 'self',
+              name: 'Votre Story',
+              avatar: user?.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
+              isSelf: true,
+              online: false,
+            } as any,
+            ...chats.filter(c => c.online),
+          ]}
           keyExtractor={(item) => `online-${item.id}`}
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.onlineList}
-          renderItem={({ item }) => (
-            <TouchableOpacity style={styles.onlineUser} onPress={() => handleOpenChat(item)}>
-              <View style={styles.avatarWrapper}>
-                <Image source={{ uri: item.avatar }} style={styles.onlineAvatar} />
-                {item.online && <View style={styles.onlineBadge} />}
-              </View>
-              <Text style={styles.onlineName} numberOfLines={1}>
-                {item.name.split(' ')[0]}
-              </Text>
-            </TouchableOpacity>
-          )}
+          renderItem={({ item }) => {
+            if ('isSelf' in item && item.isSelf) {
+              return (
+                <TouchableOpacity
+                  style={styles.onlineUser}
+                  onPress={() => {
+                    setCameraMode('story');
+                    setIsCameraOpen(true);
+                  }}
+                >
+                  <View style={styles.avatarWrapper}>
+                    <Image source={{ uri: item.avatar }} style={styles.onlineAvatar} />
+                    <View style={styles.selfStoryBadge}>
+                      <Icon name="add" size={10} color={colors.white} />
+                    </View>
+                  </View>
+                  <Text style={styles.onlineName} numberOfLines={1}>
+                    Votre Story
+                  </Text>
+                </TouchableOpacity>
+              );
+            }
+            return (
+              <TouchableOpacity style={styles.onlineUser} onPress={() => handleOpenChat(item as Chat)}>
+                <View style={styles.avatarWrapper}>
+                  <Image source={{ uri: item.avatar }} style={styles.onlineAvatar} />
+                  {item.online && <View style={styles.onlineBadge} />}
+                </View>
+                <Text style={styles.onlineName} numberOfLines={1}>
+                  {item.name.split(' ')[0]}
+                </Text>
+              </TouchableOpacity>
+            );
+          }}
         />
       </View>
 
@@ -342,10 +374,24 @@ const MessagesScreen = () => {
 
               {/* Input Row */}
               <View style={styles.inputRow}>
-                <TouchableOpacity style={styles.inputAddonBtn} onPress={() => Alert.alert('Appareil photo', 'Pièce jointe bientôt disponible.')}>
+                <TouchableOpacity 
+                  style={styles.inputAddonBtn} 
+                  onPress={() => {
+                    setChatModalVisible(false);
+                    setCameraMode('video');
+                    setIsCameraOpen(true);
+                  }}
+                >
                   <Icon name="camera-outline" size={24} color={colors.white} />
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.inputAddonBtn} onPress={() => Alert.alert('Galerie', 'Images bientôt disponibles.')}>
+                <TouchableOpacity 
+                  style={styles.inputAddonBtn} 
+                  onPress={() => {
+                    setChatModalVisible(false);
+                    setCameraMode('video');
+                    setIsCameraOpen(true);
+                  }}
+                >
                   <Icon name="image-outline" size={24} color={colors.white} style={{ marginRight: 8 }} />
                 </TouchableOpacity>
 
@@ -541,6 +587,15 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   // Chat Room styles
+  modalHeader: {
+    height: 56,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    borderBottomWidth: 0.5,
+    borderBottomColor: 'rgba(255,255,255,0.1)',
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: '#000',
@@ -683,7 +738,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: 'rgba(255, 255, 255, 0.1)',
   },
-  emptyTitle: {
+  emptyInboxTitle: {
     color: colors.white,
     fontSize: 18,
     fontWeight: '700',
@@ -712,6 +767,19 @@ const styles = StyleSheet.create({
     color: colors.white,
     fontWeight: '700',
     fontSize: 14,
+  },
+  selfStoryBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 2,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: colors.background,
   },
 });
 

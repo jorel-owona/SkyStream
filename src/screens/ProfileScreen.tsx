@@ -18,7 +18,35 @@ const PRESET_AVATARS = [
 ];
 
 const ProfileScreen = () => {
-  const { user, logout, updateProfile, bookmarkedIds, likedIds } = useAuth();
+  const { user, logout, updateProfile, bookmarkedIds, likedIds, setIsCameraOpen, setCameraMode } = useAuth();
+
+  // Publish shortcut handlers
+  const openPublishVideo = () => {
+    setCameraMode('video');
+    setIsCameraOpen(true);
+  };
+
+  const openPublishStory = () => {
+    setCameraMode('story');
+    setIsCameraOpen(true);
+  };
+
+  const showPublishMenu = () => {
+    if (isGuest) {
+      Alert.alert('Connexion requise', 'Connectez-vous pour publier du contenu.');
+      return;
+    }
+    Alert.alert(
+      'Créer du contenu',
+      'Choisissez le type de publication',
+      [
+        { text: 'Publier une Vidéo 🎬', onPress: openPublishVideo },
+        { text: 'Créer une Story ✨', onPress: openPublishStory },
+        { text: 'Modifier le profil', onPress: openEditProfile },
+        { text: 'Annuler', style: 'cancel' },
+      ]
+    );
+  };
   const [activeProfileTab, setActiveProfileTab] = useState<'posts' | 'private' | 'bookmarks' | 'likes'>('posts');
   
   // Edit Profile Modal States
@@ -150,9 +178,14 @@ const ProfileScreen = () => {
           <Icon name="person-add-outline" size={22} color={colors.white} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{user?.displayName || 'Profil'}</Text>
-        <TouchableOpacity style={styles.headerIcon} onPress={handleLogout}>
-          <Icon name="log-out-outline" size={24} color={colors.white} />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          <TouchableOpacity style={styles.headerIcon} onPress={showPublishMenu}>
+            <Icon name="add-circle-outline" size={24} color={colors.white} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.headerIcon} onPress={handleLogout}>
+            <Icon name="log-out-outline" size={24} color={colors.white} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -166,7 +199,7 @@ const ProfileScreen = () => {
                 <Icon name="person" size={50} color={colors.background} />
               </View>
             )}
-            <TouchableOpacity style={styles.addAvatarButton} onPress={openEditProfile}>
+            <TouchableOpacity style={styles.addAvatarButton} onPress={showPublishMenu}>
               <Icon name="add" size={14} color={colors.white} />
             </TouchableOpacity>
           </View>
@@ -198,6 +231,22 @@ const ProfileScreen = () => {
             </TouchableOpacity>
             <TouchableOpacity style={styles.iconButton} onPress={handleInstagramLink}>
               <Icon name="logo-instagram" size={18} color={colors.white} />
+            </TouchableOpacity>
+          </View>
+
+          {/* Publishing Shortcuts */}
+          <View style={styles.publishShortcuts}>
+            <TouchableOpacity style={styles.publishBtn} onPress={openPublishVideo}>
+              <View style={styles.publishIconBg}>
+                <Icon name="videocam" size={18} color={colors.white} />
+              </View>
+              <Text style={styles.publishBtnText}>Publier</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.publishBtn} onPress={openPublishStory}>
+              <View style={[styles.publishIconBg, { backgroundColor: colors.secondary }]}>
+                <Icon name="flash" size={18} color={colors.white} />
+              </View>
+              <Text style={styles.publishBtnText}>Story</Text>
             </TouchableOpacity>
           </View>
           
@@ -537,6 +586,30 @@ const styles = StyleSheet.create({
     paddingHorizontal: 40,
     lineHeight: 18,
     marginBottom: 16,
+  },
+  publishShortcuts: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 24,
+    marginBottom: 16,
+    paddingHorizontal: 24,
+  },
+  publishBtn: {
+    alignItems: 'center',
+    gap: 4,
+  },
+  publishIconBg: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  publishBtnText: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontWeight: '600',
   },
   tabsContainer: {
     flexDirection: 'row',

@@ -19,7 +19,7 @@ const Tab = createBottomTabNavigator();
 const DummyScreen = () => null;
 
 const AppNavigator = () => {
-  const { user, loading, isCameraOpen, setIsCameraOpen } = useAuth();
+  const { user, loading, isCameraOpen, setIsCameraOpen, cameraMode } = useAuth();
 
   if (loading) {
     return (
@@ -135,7 +135,7 @@ const AppNavigator = () => {
               animationType="slide"
               onRequestClose={() => setIsCameraOpen(false)}
             >
-              <CameraScreen onClose={() => setIsCameraOpen(false)} />
+              <CameraScreen onClose={() => setIsCameraOpen(false)} initialMode={cameraMode} />
             </Modal>
           </>
         ) : (

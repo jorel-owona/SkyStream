@@ -1,41 +1,64 @@
 # StreamSky 🚀
 
-Bienvenue sur le dépôt de **StreamSky**, une application sociale React Native Premium conçue pour offrir une expérience fluide et immersive semblable à TikTok.
+Bienvenue sur le dépôt de **StreamSky**, une application sociale React Native Premium (v0.85) conçue pour offrir une expérience fluide, immersive et ultra-responsive inspirée de TikTok.
 
-## 📱 Fonctionnalités Actuelles
+---
 
-- **Design Premium UI/UX** : Intégration d'un thème sombre professionnel inspiré des "skills" de design avancés (Glassmorphism, typographies Pro Max, couleurs vibrantes basées sur le logo).
-- **Navigation Fluide** : Un menu inférieur avec `react-navigation` incluant des icônes vectorielles (`FontAwesome5`).
-- **Caméra Intégrée** : Une fonctionnalité de capture utilisant `react-native-vision-camera` (boostée par nitro-modules), avec gestion des permissions sur Android.
-- **Profil Utilisateur** : Une page de profil complète incluant les statistiques de l'utilisateur, la biographie et une structure en grille pour les vidéos.
+## 📱 Fonctionnalités Principales
+
+- **Design Premium UI/UX** : Thème sombre sophistiqué, gradients HSL vibrants (cyan `#00F2FE` et magenta `#D12EAA`), animations soignées, et typographies premium.
+- **Double Authentification** :
+  - **Firebase Authentication** : Utilisé comme maître absolu de l'authentification (Google Sign-In réel et mode invité dynamique).
+  - **Supabase Database** : Stockage PostgreSQL pour l'application. Les données utilisateur sont associées au projet en utilisant le `uid` Firebase unique comme clé d'identification (`user_id`).
+- **Caméra Native Réelle & Galerie** : Enregistrement vidéo en direct (audio + vidéo) via `react-native-vision-camera`, et sélection de médias depuis la galerie du téléphone via `react-native-image-picker`.
+- **Hébergement des Médias (Cloudinary)** : Les vidéos et images capturées sont stockées et optimisées dynamiquement via Cloudinary.
+- **Feed Social Interactif** : Lecture continue, double-clic pour liker, favoris, commentaires, et partage.
+- **Raccourcis de Publication rapides (TikTok style)** :
+  - **Profil** : Raccourcis directs "Publier" et "Story" sous les statistiques utilisateur.
+  - **Messages** : Ligne horizontale d'amis connectés précédée de l'icône **"Votre Story"** (avec badge `+`) pour publier en 1 clic.
+  - **Ami(e)s** : Raccourci de création de Story ("Créer") en tête du carrousel de Stories.
+
+---
 
 ## 🛠 Structure du Projet
 
-Voici l'organisation principale du code source (`/src`) :
+Voici l'organisation de l'application dans `/src` :
 
 ```
-/src
- ├── /screens
- │    ├── HomeScreen.tsx    # Fil d'actualité (Pour Vous), gestion des actions (Likes, Commentaires, Partages)
- │    ├── ProfileScreen.tsx # Page de profil utilisateur avec ses statistiques et ses vidéos
- │    └── CameraScreen.tsx  # Interface d'enregistrement vidéo avec react-native-vision-camera
- ├── /theme
- │    ├── colors.ts         # Tokens de couleurs globaux (Fond sombre, accents Cyan et Rose)
- │    └── typography.ts     # Configuration typographique Premium (Tailles, Graisses)
- └── AppNavigator.tsx       # Configuration du BottomTabNavigator (Routage principal)
+StreamSky/
+ ├── supabase_schema.sql      # Script de création des tables PostgreSQL Supabase
+ └── src/
+      ├── AppNavigator.tsx    # Routage principal (BottomTabNavigator) & Modales
+      ├── /context
+      │    └── AuthContext.tsx # Gestion globale d'authentification (Firebase + Invité) et états partagés
+      ├── /libs
+      │    └── supabase.ts    # Initialisation et configuration du client Supabase
+      ├── /services
+      │    ├── CloudinaryService.ts # Service d'optimisation multimédia
+      │    └── SupabaseService.ts   # Service CRUD Supabase (Vidéos, Stories éphémères)
+      ├── /theme
+      │    ├── colors.ts      # Définition des tokens de couleur de la charte graphique
+      │    └── typography.ts  # Définition typographique Premium
+      └── /screens
+           ├── LandingScreen.tsx  # Écran de connexion (Google / Invité)
+           ├── HomeScreen.tsx     # Flux TikTok (défilement vertical infini)
+           ├── FriendsScreen.tsx  # Flux d'amis avec stories horizontales interactives
+           ├── MessagesScreen.tsx # Boîte de messagerie et raccourcis de publication rapide
+           ├── ProfileScreen.tsx  # Profil utilisateur avec onglet Publications/Favoris/J'aime
+           └── CameraScreen.tsx   # Enregistrement vidéo natif, filtres et téléversement
 ```
 
-## ⏳ Ce qu'il reste à faire (Roadmap)
+---
 
-Le projet est configuré avec Firebase (`@react-native-firebase/app`, `auth`, `storage`), mais l'implémentation logique de la base de données n'est pas encore terminée.
+## ⚡ Initialisation de la Base de Données (Supabase)
 
-**À implémenter :**
-1. **Firebase Authentication** : Permettre aux utilisateurs de créer un compte et de se connecter.
-2. **Firebase Firestore / Storage** :
-   - Sauvegarder les vidéos enregistrées par la caméra vers Firebase Storage.
-   - Créer une base de données Firestore pour lier les URLs des vidéos aux profils des utilisateurs.
-   - Remplacer le "Lecteur Vidéo StreamSky" (placeholder dans `HomeScreen`) par un véritable composant de lecture (`react-native-video`) qui lit les flux depuis Firebase.
-3. **Système de commentaires et de likes** en temps réel connecté à Firestore.
+Pour configurer votre base de données PostgreSQL sur Supabase :
+1. Rendez-vous sur votre tableau de bord [Supabase](https://supabase.com).
+2. Ouvrez l'**SQL Editor** de votre projet.
+3. Copiez le contenu du fichier [supabase_schema.sql](file:///home/jorel/Bureau/StreamSky/supabase_schema.sql) situé à la racine du projet et exécutez-le.
+4. (Optionnel) Ajustez vos politiques de sécurité (RLS) dans le tableau de bord Supabase si nécessaire. Par défaut, RLS est désactivé sur ces tables pour faciliter les tests.
+
+---
 
 ## 🚀 Installation & Lancement
 
@@ -44,8 +67,16 @@ Le projet est configuré avec Firebase (`@react-native-firebase/app`, `auth`, `s
    ```bash
    npm install
    ```
-3. Lancer l'application sous Android :
+3. Lancez le serveur Metro de développement :
+   ```bash
+   npx react-native start --reset-cache
+   ```
+4. Lancez l'application sur Android :
    ```bash
    npx react-native run-android
    ```
-   *(Assurez-vous d'avoir un téléphone branché en ADB ou un émulateur ouvert)*
+5. Lancez l'application sur iOS (Mac requis) :
+   ```bash
+   cd ios && pod install && cd ..
+   npx react-native run-ios
+   ```

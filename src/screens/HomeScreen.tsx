@@ -218,7 +218,7 @@ const HomeScreen = () => {
         {/* Fullscreen Video Player */}
         <TouchableOpacity
           activeOpacity={1}
-          style={StyleSheet.absoluteFillObject}
+          style={StyleSheet.absoluteFill}
           onPress={() => handleDoubleTap(item.id)}
         >
           <Video
