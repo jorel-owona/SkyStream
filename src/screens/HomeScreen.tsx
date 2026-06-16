@@ -14,9 +14,13 @@ import {
   KeyboardAvoidingView,
   Platform,
   Animated,
+  ScrollView,
+  ToastAndroid,
+  Alert,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import Video from 'react-native-video';
+import Clipboard from '@react-native-clipboard/clipboard';
 import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
 import { sampleVideos, VideoItem } from '../services/CloudinaryService';
@@ -92,6 +96,10 @@ const HomeScreen = () => {
     ],
   });
   const [newCommentText, setNewCommentText] = useState('');
+  
+  // Share Modal State
+  const [shareModalVisible, setShareModalVisible] = useState(false);
+  const [selectedShareVideo, setSelectedShareVideo] = useState<VideoItem | null>(null);
 
   const viewabilityConfig = useRef({
     itemVisiblePercentThreshold: 80,
@@ -149,18 +157,82 @@ const HomeScreen = () => {
     );
   };
 
-  const handleShare = async (item: VideoItem) => {
+  const showToast = (message: string) => {
+    if (Platform.OS === 'android') {
+      ToastAndroid.show(message, ToastAndroid.SHORT);
+    } else {
+      Alert.alert('', message);
+    }
+  };
+
+  const openShareMenu = (item: VideoItem) => {
+    setSelectedShareVideo(item);
+    setShareModalVisible(true);
+  };
+
+  const handleCopyLink = () => {
+    if (!selectedShareVideo) return;
+    Clipboard.setString(selectedShareVideo.videoUrl);
+    setShareModalVisible(false);
+    showToast('Lien copié dans le presse-papiers !');
+  };
+
+  const handleShareNatively = async () => {
+    if (!selectedShareVideo) return;
+    setShareModalVisible(false);
     try {
       await Share.share({
-        message: `Regarde cette superbe vidéo de @${item.username} sur StreamSky !: ${item.videoUrl}`,
+        message: `Regarde cette superbe vidéo de @${selectedShareVideo.username} sur StreamSky ! : ${selectedShareVideo.videoUrl}`,
       });
       // Increment share count locally
       setVideoFeed(prev =>
-        prev.map(v => (v.id === item.id ? { ...v, shares: v.shares + 1 } : v))
+        prev.map(v => (v.id === selectedShareVideo.id ? { ...v, shares: v.shares + 1 } : v))
       );
     } catch (error) {
       console.log('Share error:', error);
     }
+  };
+
+  const handleRepublish = () => {
+    if (!selectedShareVideo) return;
+    setShareModalVisible(false);
+    setVideoFeed(prev =>
+      prev.map(v => (v.id === selectedShareVideo.id ? { ...v, shares: v.shares + 1 } : v))
+    );
+    showToast('Vidéo republiée avec succès ! 🔄');
+  };
+
+  const handleSaveVideo = () => {
+    if (!selectedShareVideo) return;
+    setShareModalVisible(false);
+    showToast('Téléchargement de la vidéo commencé...');
+    setTimeout(() => {
+      showToast('Vidéo enregistrée dans la galerie ! 📥');
+    }, 2000);
+  };
+
+  const handleDuet = () => {
+    setShareModalVisible(false);
+    Alert.alert('Fonction Duo', 'La fonctionnalité Duo sera bientôt disponible ! 🚀');
+  };
+
+  const handleNotInterested = () => {
+    if (!selectedShareVideo) return;
+    setShareModalVisible(false);
+    showToast('Cette vidéo ne vous sera plus recommandée.');
+  };
+
+  const handleReport = () => {
+    if (!selectedShareVideo) return;
+    setShareModalVisible(false);
+    Alert.alert(
+      'Signaler',
+      'Merci de nous aider à préserver la sécurité de la communauté StreamSky. Voulez-vous signaler cette vidéo ?',
+      [
+        { text: 'Annuler', style: 'cancel' },
+        { text: 'Signaler', style: 'destructive', onPress: () => showToast('Vidéo signalée avec succès.') },
+      ]
+    );
   };
 
   const openComments = (videoId: string) => {
@@ -297,7 +369,7 @@ const HomeScreen = () => {
             </TouchableOpacity>
 
             {/* Share */}
-            <TouchableOpacity style={styles.actionBtn} onPress={() => handleShare(item)}>
+            <TouchableOpacity style={styles.actionBtn} onPress={() => openShareMenu(item)}>
               <View style={styles.actionIconWrapper}>
                 <Icon name="share-social" size={32} color={colors.white} />
               </View>
@@ -427,6 +499,99 @@ const HomeScreen = () => {
             </View>
           </View>
         </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Bottom Sheet Share Modal */}
+      <Modal
+        visible={shareModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShareModalVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShareModalVisible(false)}
+        >
+          <View style={styles.shareSheet} onStartShouldSetResponder={() => true}>
+            <View style={styles.shareHeader}>
+              <View style={styles.headerBar} />
+              <Text style={styles.shareTitle}>Partager la vidéo</Text>
+            </View>
+
+            {/* Row 1: Quick share/copy */}
+            <View style={styles.shareActionsContainer}>
+              <Text style={styles.shareSectionTitle}>Partager avec</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.scrollActions}>
+                <TouchableOpacity style={styles.shareActionItem} onPress={handleShareNatively}>
+                  <View style={[styles.shareActionIconWrapper, { backgroundColor: '#25D366' }]}>
+                    <Icon name="logo-whatsapp" size={24} color={colors.white} />
+                  </View>
+                  <Text style={styles.shareActionLabel}>WhatsApp</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.shareActionItem} onPress={handleShareNatively}>
+                  <View style={[styles.shareActionIconWrapper, { backgroundColor: '#1877F2' }]}>
+                    <Icon name="logo-facebook" size={24} color={colors.white} />
+                  </View>
+                  <Text style={styles.shareActionLabel}>Facebook</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.shareActionItem} onPress={handleCopyLink}>
+                  <View style={[styles.shareActionIconWrapper, { backgroundColor: colors.surface }]}>
+                    <Icon name="link" size={24} color={colors.white} />
+                  </View>
+                  <Text style={styles.shareActionLabel}>Copier le lien</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.shareActionItem} onPress={handleRepublish}>
+                  <View style={[styles.shareActionIconWrapper, { backgroundColor: '#00F2FE' }]}>
+                    <Icon name="repeat" size={24} color={colors.black} />
+                  </View>
+                  <Text style={styles.shareActionLabel}>Republier</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.shareActionItem} onPress={handleSaveVideo}>
+                  <View style={[styles.shareActionIconWrapper, { backgroundColor: colors.surface }]}>
+                    <Icon name="download-outline" size={24} color={colors.white} />
+                  </View>
+                  <Text style={styles.shareActionLabel}>Enregistrer</Text>
+                </TouchableOpacity>
+              </ScrollView>
+            </View>
+
+            {/* Row 2: TikTok features */}
+            <View style={styles.shareActionsContainer}>
+              <Text style={styles.shareSectionTitle}>Autres fonctionnalités</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.scrollActions}>
+                <TouchableOpacity style={styles.shareActionItem} onPress={handleDuet}>
+                  <View style={[styles.shareActionIconWrapper, { backgroundColor: colors.surface }]}>
+                    <Icon name="duplicate-outline" size={24} color={colors.white} />
+                  </View>
+                  <Text style={styles.shareActionLabel}>Duo</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.shareActionItem} onPress={handleNotInterested}>
+                  <View style={[styles.shareActionIconWrapper, { backgroundColor: colors.surface }]}>
+                    <Icon name="eye-off-outline" size={24} color={colors.white} />
+                  </View>
+                  <Text style={styles.shareActionLabel}>Pas intéressé</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.shareActionItem} onPress={handleReport}>
+                  <View style={[styles.shareActionIconWrapper, { backgroundColor: colors.surface }]}>
+                    <Icon name="flag-outline" size={24} color={colors.white} />
+                  </View>
+                  <Text style={styles.shareActionLabel}>Signaler</Text>
+                </TouchableOpacity>
+              </ScrollView>
+            </View>
+
+            <TouchableOpacity style={styles.cancelShareBtn} onPress={() => setShareModalVisible(false)}>
+              <Text style={styles.cancelShareText}>Annuler</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
       </Modal>
     </View>
   );
@@ -741,6 +906,73 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  shareSheet: {
+    height: height * 0.42,
+    backgroundColor: '#1E152E',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    paddingTop: 8,
+  },
+  shareHeader: {
+    alignItems: 'center',
+    paddingBottom: 10,
+    borderBottomWidth: 0.5,
+    borderBottomColor: 'rgba(255,255,255,0.1)',
+  },
+  shareTitle: {
+    color: colors.white,
+    fontWeight: '700',
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  shareActionsContainer: {
+    paddingVertical: 8,
+    borderBottomWidth: 0.5,
+    borderBottomColor: 'rgba(255,255,255,0.05)',
+  },
+  shareSectionTitle: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontWeight: '600',
+    paddingHorizontal: 16,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 6,
+  },
+  scrollActions: {
+    paddingHorizontal: 10,
+    gap: 14,
+  },
+  shareActionItem: {
+    alignItems: 'center',
+    width: 68,
+  },
+  shareActionIconWrapper: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  shareActionLabel: {
+    color: colors.white,
+    fontSize: 10,
+    textAlign: 'center',
+    fontWeight: '500',
+  },
+  cancelShareBtn: {
+    height: 48,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    marginTop: 'auto',
+  },
+  cancelShareText: {
+    color: colors.white,
+    fontSize: 15,
+    fontWeight: '600',
   },
 });
 

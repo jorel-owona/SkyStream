@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Image, ScrollView, TouchableOpacity, Dimensions, Alert, Modal, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, StyleSheet, Image, ScrollView, TouchableOpacity, Dimensions, Alert, Modal, TextInput, KeyboardAvoidingView, Platform, Share } from 'react-native';
 import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
 import Icon from 'react-native-vector-icons/Ionicons';
@@ -58,7 +58,67 @@ const ProfileScreen = () => {
   // Video Preview State
   const [previewVideo, setPreviewVideo] = useState<VideoItem | null>(null);
 
+  // QR Code Modal State
+  const [qrModalVisible, setQrModalVisible] = useState(false);
+
   const isGuest = user?.isGuest ?? true;
+
+  const openQrModal = () => {
+    if (isGuest) {
+      Alert.alert('Connexion requise', 'Connectez-vous pour voir votre code QR.');
+      return;
+    }
+    setQrModalVisible(true);
+  };
+
+  const handleShareProfile = async () => {
+    try {
+      await Share.share({
+        message: `Découvre mon profil StreamSky ! ${formattedUsername} : https://streamsky.app/user/${formattedUsername.replace('@', '')}`,
+      });
+    } catch (e) {
+      console.log('Share profile error:', e);
+    }
+  };
+
+  const MockQrCode = () => {
+    // 9x9 grid representation of a QR Code
+    const grid = [
+      [1, 1, 1, 1, 1, 1, 1, 1, 1],
+      [1, 0, 0, 0, 0, 0, 0, 0, 1],
+      [1, 0, 1, 1, 0, 1, 1, 0, 1],
+      [1, 0, 1, 1, 0, 1, 1, 0, 1],
+      [1, 0, 0, 0, 0, 0, 0, 0, 1],
+      [1, 0, 1, 1, 0, 1, 1, 0, 1],
+      [1, 0, 1, 1, 0, 1, 1, 0, 1],
+      [1, 0, 0, 0, 0, 0, 0, 0, 1],
+      [1, 1, 1, 1, 1, 1, 1, 1, 1],
+    ];
+    return (
+      <View style={styles.qrGridContainer}>
+        <View style={styles.qrGrid}>
+          {grid.map((row, rIdx) => (
+            <View key={rIdx} style={{ flexDirection: 'row' }}>
+              {row.map((cell, cIdx) => (
+                <View
+                  key={cIdx}
+                  style={{
+                    width: 18,
+                    height: 18,
+                    backgroundColor: cell === 1 ? colors.white : 'transparent',
+                    margin: 1,
+                  }}
+                />
+              ))}
+            </View>
+          ))}
+        </View>
+        <View style={styles.qrAvatarWrapper}>
+          <Image source={{ uri: user?.photoURL || PRESET_AVATARS[0] }} style={styles.qrAvatarImage} />
+        </View>
+      </View>
+    );
+  };
   const suivisCount = isGuest ? 0 : 124;
   const abonneesCount = isGuest ? 0 : 374;
   const likesCount = isGuest ? 0 : likedIds.length + 842;
@@ -228,6 +288,9 @@ const ProfileScreen = () => {
           <View style={styles.actionButtons}>
             <TouchableOpacity style={styles.editButton} onPress={openEditProfile}>
               <Text style={styles.editButtonText}>Modifier le profil</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.iconButton} onPress={openQrModal}>
+              <Icon name="qr-code-outline" size={18} color={colors.white} />
             </TouchableOpacity>
             <TouchableOpacity style={styles.iconButton} onPress={handleInstagramLink}>
               <Icon name="logo-instagram" size={18} color={colors.white} />
@@ -449,6 +512,39 @@ const ProfileScreen = () => {
               </View>
             </View>
           )}
+        </View>
+      </Modal>
+
+      {/* QR Code Modal */}
+      <Modal
+        visible={qrModalVisible}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setQrModalVisible(false)}
+      >
+        <View style={styles.qrModalOverlay}>
+          <View style={styles.qrModalContent}>
+            <View style={styles.qrModalHeader}>
+              <Text style={styles.qrModalTitle}>Mon Code QR</Text>
+              <TouchableOpacity onPress={() => setQrModalVisible(false)}>
+                <Icon name="close" size={24} color={colors.white} />
+              </TouchableOpacity>
+            </View>
+            
+            <View style={styles.qrCard}>
+              <Text style={styles.qrName}>{user?.displayName}</Text>
+              <Text style={styles.qrUsername}>{formattedUsername}</Text>
+              
+              <MockQrCode />
+              
+              <Text style={styles.qrHelpText}>Scannez pour me suivre sur StreamSky 💫</Text>
+            </View>
+
+            <TouchableOpacity style={styles.qrShareBtn} onPress={handleShareProfile}>
+              <Icon name="share-social-outline" size={20} color={colors.white} style={{ marginRight: 8 }} />
+              <Text style={styles.qrShareBtnText}>Partager mon profil</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </Modal>
     </View>
@@ -828,6 +924,107 @@ const styles = StyleSheet.create({
   previewDesc: {
     color: colors.white,
     fontSize: 13,
+  },
+  // QR Code Styles
+  qrModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  qrModalContent: {
+    width: width * 0.85,
+    backgroundColor: '#1E152E',
+    borderRadius: 20,
+    padding: 24,
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  qrModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    width: '100%',
+    marginBottom: 20,
+  },
+  qrModalTitle: {
+    color: colors.white,
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  qrCard: {
+    backgroundColor: '#150C25',
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+    width: '100%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.04)',
+  },
+  qrName: {
+    color: colors.white,
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  qrUsername: {
+    color: colors.primary,
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 24,
+  },
+  qrGridContainer: {
+    position: 'relative',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#0F081D',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 20,
+  },
+  qrGrid: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  qrAvatarWrapper: {
+    position: 'absolute',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 3,
+    borderColor: '#0F081D',
+    overflow: 'hidden',
+    backgroundColor: colors.surface,
+  },
+  qrAvatarImage: {
+    width: '100%',
+    height: '100%',
+  },
+  qrHelpText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  qrShareBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.primary,
+    width: '100%',
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    marginTop: 24,
+  },
+  qrShareBtnText: {
+    color: colors.white,
+    fontWeight: '700',
+    fontSize: 14,
   },
 });
 

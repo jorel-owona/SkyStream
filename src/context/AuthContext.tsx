@@ -30,7 +30,7 @@ export interface UserProfile {
 interface AuthContextType {
   user: UserProfile | null;
   loading: boolean;
-  loginAsGuest: () => void;
+  loginAsGuest: () => void | Promise<void>;
   loginWithGoogle: () => Promise<void>;
   loginWithApple: () => Promise<void>;
   logout: () => Promise<void>;
@@ -49,7 +49,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 // Web Client ID from Firebase Console (retrieve from Firebase -> Authentication -> Google Sign-In)
 // Set to a placeholder. If configured, real Google Sign-In is triggered.
-const GOOGLE_WEB_CLIENT_ID = ''; 
+const GOOGLE_WEB_CLIENT_ID = '496539035044-tueaccv3ukhul1nifh9pkddl3989k0o7.apps.googleusercontent.com';
 
 if (GoogleSignin) {
   try {
@@ -92,15 +92,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return unsubscribe;
   }, []);
 
-  const loginAsGuest = () => {
-    setUser({
-      uid: 'guest_' + Math.random().toString(36).substr(2, 9),
-      displayName: 'Invité',
-      email: null,
-      photoURL: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
-      isGuest: true,
-      bio: 'Bienvenue sur mon profil StreamSky ! ✨',
-    });
+  const loginAsGuest = async () => {
+    try {
+      setLoading(true);
+      const userCredential = await auth().signInAnonymously();
+      if (userCredential.user) {
+        setUser({
+          uid: userCredential.user.uid,
+          displayName: 'Invité',
+          email: null,
+          photoURL: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
+          isGuest: true,
+          bio: 'Bienvenue sur mon profil StreamSky ! ✨',
+        });
+      }
+      setLoading(false);
+    } catch (error: any) {
+      console.warn('Anonymous sign-in failed, using mock guest:', error);
+      // Fallback to offline guest user
+      setUser({
+        uid: 'guest_' + Math.random().toString(36).substr(2, 9),
+        displayName: 'Invité',
+        email: null,
+        photoURL: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
+        isGuest: true,
+        bio: 'Bienvenue sur mon profil StreamSky ! ✨',
+      });
+      setLoading(false);
+    }
   };
 
   const loginWithGoogle = async () => {
@@ -134,7 +153,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
       const signInResult = await GoogleSignin.signIn();
-      
+
       let idToken = (signInResult as any).idToken;
       if (!idToken && (signInResult as any).data) {
         idToken = (signInResult as any).data.idToken;
@@ -146,7 +165,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const googleCredential = auth.GoogleAuthProvider.credential(idToken);
       const userCredential = await auth().signInWithCredential(googleCredential);
-      
+
       if (userCredential.user) {
         setUser({
           uid: userCredential.user.uid,
