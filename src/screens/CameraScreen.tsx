@@ -9,15 +9,20 @@ import {
   TextInput,
   Alert,
   Platform,
+  PermissionsAndroid,
+  Linking,
 } from 'react-native';
-import { Camera, useCameraDevice } from 'react-native-vision-camera';
+import { Camera, useCameraDevice, VisionCamera } from 'react-native-vision-camera';
 import { launchImageLibrary } from 'react-native-image-picker';
 import { colors } from '../theme/colors';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { supabaseService } from '../services/SupabaseService';
+import { uploadVideoToCloudinary } from '../services/CloudinaryService';
+import { useAuth } from '../context/AuthContext';
 
 const CameraScreen = ({ navigation, onClose, initialMode = 'video' }: any) => {
-  const [hasPermission, setHasPermission] = useState(false);
+  const { user } = useAuth();
+  const [hasPermission, setHasPermission] = useState<boolean | null>(null); // null = loading, false = denied, true = granted
   const [cameraType, setCameraType] = useState<'back' | 'front'>('back');
   const device = useCameraDevice(cameraType);
   const cameraRef = useRef<any>(null);
@@ -38,9 +43,14 @@ const CameraScreen = ({ navigation, onClose, initialMode = 'video' }: any) => {
   // Request camera and microphone permissions
   useEffect(() => {
     (async () => {
-      const cameraStatus = await (Camera as any).requestCameraPermission();
-      const microphoneStatus = await (Camera as any).requestMicrophonePermission();
-      setHasPermission(cameraStatus === 'granted' && microphoneStatus === 'granted');
+      try {
+        const cameraStatus = await VisionCamera.requestCameraPermission();
+        const microphoneStatus = await VisionCamera.requestMicrophonePermission();
+        setHasPermission(cameraStatus && microphoneStatus);
+      } catch (err) {
+        console.error('Error requesting permissions:', err);
+        setHasPermission(false);
+      }
     })();
   }, []);
 
@@ -106,8 +116,50 @@ const CameraScreen = ({ navigation, onClose, initialMode = 'video' }: any) => {
     }
   };
 
+  // Request gallery permission (Android only)
+  const requestGalleryPermission = async (): Promise<boolean> => {
+    if (Platform.OS !== 'android') {
+      return true; // iOS handles permissions natively via launchImageLibrary
+    }
+
+    const androidVersion = parseInt(String(Platform.Version), 10);
+    if (androidVersion >= 33) {
+      // Android 13+ (SDK 33+) handles gallery access via the system Photo Picker,
+      // which does not require runtime storage permissions.
+      return true;
+    }
+
+    try {
+      // Android 12 and below requires READ_EXTERNAL_STORAGE
+      const result = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
+        {
+          title: 'Accès à la galerie',
+          message: 'StreamSky a besoin d\'accéder à votre galerie pour publier des photos et vidéos.',
+          buttonPositive: 'Autoriser',
+          buttonNegative: 'Refuser',
+        }
+      );
+      return result === PermissionsAndroid.RESULTS.GRANTED;
+    } catch (error) {
+      console.error('Gallery permission error:', error);
+      return false;
+    }
+  };
+
   // Open device photo/video library
-  const handleOpenGallery = () => {
+  const handleOpenGallery = async () => {
+    const hasGalleryPermission = await requestGalleryPermission();
+
+    if (!hasGalleryPermission) {
+      Alert.alert(
+        'Permission refusée',
+        'StreamSky n\'a pas accès à votre galerie. Allez dans Paramètres → Applications → StreamSky → Autorisations pour l\'activer.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
     launchImageLibrary(
       {
         mediaType: 'video',
@@ -143,15 +195,19 @@ const CameraScreen = ({ navigation, onClose, initialMode = 'video' }: any) => {
     try {
       setIsUploading(true);
       
-      // 1. Simuler/Effectuer le téléversement vers Cloudinary
-      const cloudinaryUrl = await supabaseService.uploadToCloudinarySimulated(mediaUri);
+      // 1. Téléverser la vidéo vers Cloudinary (unsigned upload avec repli HLS automatique)
+      const cloudinaryUrl = await uploadVideoToCloudinary(mediaUri);
 
       // 2. Insérer dans Supabase en fonction du mode (Video vs Story)
+      // On passe le nom et la photo de l'utilisateur pour qu'ils apparaissent dans le feed
+      const displayName = user?.displayName || null;
+      const photoUrl = user?.photoURL || null;
+
       if (publishMode === 'story') {
         await supabaseService.publishStory(videoTitle.trim(), cloudinaryUrl);
         Alert.alert('Succès', 'Votre story éphémère a été publiée avec succès ! ✨');
       } else {
-        await supabaseService.publishVideo(videoTitle.trim(), cloudinaryUrl);
+        await supabaseService.publishVideo(videoTitle.trim(), cloudinaryUrl, displayName, photoUrl);
         Alert.alert('Succès', 'Votre vidéo a été publiée avec succès ! 🚀');
       }
 
@@ -171,13 +227,37 @@ const CameraScreen = ({ navigation, onClose, initialMode = 'video' }: any) => {
     }
   };
 
-  if (!hasPermission) {
+  if (hasPermission === null) {
     return (
       <View style={styles.container}>
         <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.permissionText}>Demande de permission de la caméra et du micro...</Text>
+        <Text style={styles.permissionText}>Vérification des permissions caméra et micro...</Text>
+      </View>
+    );
+  }
+
+  if (hasPermission === false) {
+    return (
+      <View style={styles.container}>
+        <Icon name="videocam-off" size={64} color="rgba(255, 255, 255, 0.3)" style={{ marginBottom: 12 }} />
+        <Text style={styles.permissionTitle}>Permissions Requises 🎬</Text>
+        <Text style={styles.permissionText}>
+          StreamSky a besoin d'accéder à l'appareil photo et au microphone pour vous permettre de capturer des vidéos et publier du contenu.
+        </Text>
+        
+        <TouchableOpacity style={styles.settingsBtn} onPress={() => Linking.openSettings()}>
+          <Text style={styles.settingsBtnText}>Ouvrir les Paramètres</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity 
+          style={styles.galleryFallbackBtn} 
+          onPress={handleOpenGallery}
+        >
+          <Text style={styles.galleryFallbackText}>Sélectionner depuis la Galerie</Text>
+        </TouchableOpacity>
+
         <TouchableOpacity style={styles.exitBtn} onPress={() => onClose ? onClose() : navigation?.goBack()}>
-          <Text style={styles.exitBtnText}>Fermer</Text>
+          <Text style={styles.exitBtnText}>Annuler</Text>
         </TouchableOpacity>
       </View>
     );
@@ -630,6 +710,42 @@ const styles = StyleSheet.create({
   publishBtnText: {
     color: colors.black,
     fontWeight: '700',
+  },
+  permissionTitle: {
+    color: colors.white,
+    fontSize: 18,
+    fontWeight: '700',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  settingsBtn: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 24,
+    marginTop: 20,
+    width: '70%',
+    alignItems: 'center',
+  },
+  settingsBtnText: {
+    color: colors.black,
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  galleryFallbackBtn: {
+    borderColor: 'rgba(255, 255, 255, 0.4)',
+    borderWidth: 1.5,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 24,
+    marginTop: 12,
+    width: '70%',
+    alignItems: 'center',
+  },
+  galleryFallbackText: {
+    color: colors.white,
+    fontWeight: '600',
+    fontSize: 14,
   },
 });
 

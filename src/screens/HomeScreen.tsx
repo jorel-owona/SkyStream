@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -17,14 +17,21 @@ import {
   ScrollView,
   ToastAndroid,
   Alert,
+  ActivityIndicator,
+  RefreshControl,
+  AppState,
+  AppStateStatus,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import Video from 'react-native-video';
 import Clipboard from '@react-native-clipboard/clipboard';
 import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
-import { sampleVideos, VideoItem } from '../services/CloudinaryService';
+import { sampleVideos, VideoItem, supabaseVideoToItem } from '../services/CloudinaryService';
+import { supabaseService } from '../services/SupabaseService';
 import { useAuth } from '../context/AuthContext';
+import { useIsFocused } from '@react-navigation/native';
+
 
 const { width, height } = Dimensions.get('window');
 
@@ -77,29 +84,71 @@ const LinearGradientBorder: React.FC<{ children: React.ReactNode }> = ({ childre
   </View>
 );
 
-const HomeScreen = () => {
-  const { likedIds, bookmarkedIds, toggleLike, toggleBookmark, setIsCameraOpen } = useAuth();
-  const [videoFeed, setVideoFeed] = useState<VideoItem[]>(sampleVideos);
+const HomeScreen = ({ navigation }: any) => {
+  const { user, likedIds, bookmarkedIds, toggleLike, toggleBookmark, setIsCameraOpen } = useAuth();
+  const isFocused = useIsFocused();
+  const [videoFeed, setVideoFeed] = useState<VideoItem[]>([]);
+
+  const [isLoadingFeed, setIsLoadingFeed] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [activeVideoIndex, setActiveVideoIndex] = useState(0);
   const [selectedTopTab, setSelectedTopTab] = useState<'pour_toi' | 'suivis' | 'explorer'>('pour_toi');
-  
+
+  // Tap-to-pause: Map videoId -> manuallyPaused
+  const [manuallyPausedMap, setManuallyPausedMap] = useState<Record<string, boolean>>({});
+  // AppState: pause when app goes to background
+  const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+  const [appIsActive, setAppIsActive] = useState(true);
+
   // Comments Modal State
   const [commentsModalVisible, setCommentsModalVisible] = useState(false);
   const [currentVideoId, setCurrentVideoId] = useState<string | null>(null);
-  const [commentsMap, setCommentsMap] = useState<Record<string, { id: string; user: string; text: string; time: string; avatar: string }[]>>({
-    'vid-1': [
-      { id: 'c1', user: 'jean_d', text: 'Super conseils, merci docteur ! 🧑‍⚕️', time: '1h', avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100' },
-      { id: 'c2', user: 'amelie_l', text: 'Très instructif, je partage !', time: '4h', avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100' },
-    ],
-    'vid-2': [
-      { id: 'c3', user: 'nature_lover', text: 'Ces paysages sont incroyables 🌲🚗', time: '2h', avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=100' },
-    ],
-  });
+  const [commentsMap, setCommentsMap] = useState<Record<string, { id: string; user: string; text: string; time: string; avatar: string }[]>>({});
+  const [isLoadingComments, setIsLoadingComments] = useState(false);
   const [newCommentText, setNewCommentText] = useState('');
   
   // Share Modal State
   const [shareModalVisible, setShareModalVisible] = useState(false);
   const [selectedShareVideo, setSelectedShareVideo] = useState<VideoItem | null>(null);
+
+  // Load videos from Supabase + Cloudinary seed
+  const loadFeed = useCallback(async (isRefresh = false) => {
+    try {
+      if (isRefresh) {
+        setIsRefreshing(true);
+      } else {
+        setIsLoadingFeed(true);
+      }
+
+      // Fetch user-published videos from Supabase
+      const supabaseVideos = await supabaseService.fetchVideos();
+      const supabaseItems = supabaseVideos.map(supabaseVideoToItem);
+
+      // Combine: Supabase videos first (most recent), then Cloudinary seed videos
+      const combined = [...supabaseItems, ...sampleVideos];
+      setVideoFeed(combined);
+    } catch (error) {
+      console.error('[HomeScreen] Erreur chargement du feed:', error);
+      // On error, show only the seed Cloudinary video
+      setVideoFeed(sampleVideos);
+    } finally {
+      setIsLoadingFeed(false);
+      setIsRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadFeed();
+  }, [loadFeed]);
+
+  // AppState listener: pause video when app goes to background
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {
+      appStateRef.current = nextState;
+      setAppIsActive(nextState === 'active');
+    });
+    return () => subscription.remove();
+  }, []);
 
   const viewabilityConfig = useRef({
     itemVisiblePercentThreshold: 80,
@@ -235,53 +284,104 @@ const HomeScreen = () => {
     );
   };
 
-  const openComments = (videoId: string) => {
+  const openComments = async (videoId: string) => {
     setCurrentVideoId(videoId);
     setCommentsModalVisible(true);
+    // Load comments from Supabase
+    try {
+      setIsLoadingComments(true);
+      const dbComments = await supabaseService.fetchComments(videoId);
+      const mapped = dbComments.map(c => ({
+        id: c.id,
+        user: c.display_name || 'Utilisateur',
+        text: c.text,
+        time: new Date(c.created_at).toLocaleDateString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+        avatar: c.photo_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100',
+      }));
+      setCommentsMap(prev => ({ ...prev, [videoId]: mapped }));
+    } catch (e) {
+      console.warn('[HomeScreen] Erreur chargement commentaires:', e);
+    } finally {
+      setIsLoadingComments(false);
+    }
   };
 
-  const postComment = () => {
+  const postComment = async () => {
     if (!newCommentText.trim() || !currentVideoId) return;
+    const text = newCommentText.trim();
+    setNewCommentText('');
 
-    const newComment = {
+    // Optimistic UI
+    const optimisticComment = {
       id: Math.random().toString(36).substr(2, 9),
-      user: 'moi',
-      text: newCommentText.trim(),
+      user: user?.displayName || 'Moi',
+      text,
       time: 'Maintenant',
-      avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100',
+      avatar: user?.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100',
     };
-
     setCommentsMap(prev => ({
       ...prev,
-      [currentVideoId]: [newComment, ...(prev[currentVideoId] || [])],
+      [currentVideoId]: [optimisticComment, ...(prev[currentVideoId] || [])],
     }));
-
-    // Update comment count on video
     setVideoFeed(prev =>
       prev.map(v => (v.id === currentVideoId ? { ...v, commentsCount: v.commentsCount + 1 } : v))
     );
 
-    setNewCommentText('');
+    // Save to Supabase + send notification
+    try {
+      await supabaseService.postComment(currentVideoId, text);
+      // Notify video owner
+      const videoItem = videoFeed.find(v => v.id === currentVideoId);
+      if (videoItem?.userId) {
+        await supabaseService.sendNotification(videoItem.userId, 'comment', {
+          videoId: currentVideoId,
+          message: `a commenté votre vidéo : "${text.substring(0, 50)}"`,
+        });
+      }
+    } catch (e) {
+      console.warn('[HomeScreen] Erreur post commentaire:', e);
+    }
   };
 
-  // Double tap to like implementation
+  // Tap to pause/play + double tap to like
   const lastTapRef = useRef(0);
-  const handleDoubleTap = (videoId: string) => {
+  const handleVideoTap = (videoId: string) => {
     const now = Date.now();
     const DOUBLE_PRESS_DELAY = 300;
     if (now - lastTapRef.current < DOUBLE_PRESS_DELAY) {
+      // Double tap → like
       const isLiked = likedIds.includes(videoId);
       if (!isLiked) {
         handleLike(videoId);
       }
     } else {
+      // Single tap → toggle pause
       lastTapRef.current = now;
+      setTimeout(() => {
+        if (Date.now() - lastTapRef.current >= DOUBLE_PRESS_DELAY) {
+          setManuallyPausedMap(prev => ({
+            ...prev,
+            [videoId]: !prev[videoId],
+          }));
+        }
+      }, DOUBLE_PRESS_DELAY + 50);
+    }
+  };
+
+  const handleAvatarPress = (item: VideoItem) => {
+    if (item.userId) {
+      navigation?.navigate('UserProfile', {
+        userId: item.userId,
+        displayName: item.username,
+        photoUrl: item.userAvatar,
+      });
     }
   };
 
   const renderVideoItem = ({ item, index }: { item: VideoItem; index: number }) => {
-    const isPlaying = index === activeVideoIndex;
-    const commentsList = (currentVideoId && commentsMap[currentVideoId]) || [];
+    const isActiveIndex = index === activeVideoIndex;
+    const isManuallyPaused = !!manuallyPausedMap[item.id];
+    const isPaused = !isActiveIndex || isManuallyPaused || !appIsActive || !isFocused;
     const isLiked = likedIds.includes(item.id);
     const isBookmarked = bookmarkedIds.includes(item.id);
 
@@ -291,20 +391,36 @@ const HomeScreen = () => {
         <TouchableOpacity
           activeOpacity={1}
           style={StyleSheet.absoluteFill}
-          onPress={() => handleDoubleTap(item.id)}
+          onPress={() => handleVideoTap(item.id)}
         >
           <Video
-            source={{ uri: item.videoUrl }}
+            source={{
+              uri: item.videoUrl,
+              ...(item.videoUrl?.includes('.m3u8') && { type: 'application/x-mpegurl' }),
+            }}
             style={styles.videoPlayer}
             resizeMode="cover"
             repeat={true}
-            paused={!isPlaying}
+            paused={isPaused}
             muted={false}
             playInBackground={false}
             playWhenInactive={false}
             onError={(e) => console.log('Video Playback Error:', e)}
           />
         </TouchableOpacity>
+
+        {/* Pause/Play icon overlay */}
+        {isManuallyPaused && (
+          <TouchableOpacity
+            style={styles.pauseOverlay}
+            activeOpacity={1}
+            onPress={() => handleVideoTap(item.id)}
+          >
+            <View style={styles.pauseIconWrapper}>
+              <Icon name="play" size={48} color={colors.white} />
+            </View>
+          </TouchableOpacity>
+        )}
 
         {/* Dynamic Overlay info */}
         <View style={styles.overlayContainer}>
@@ -324,9 +440,9 @@ const HomeScreen = () => {
 
           {/* Right Action Buttons */}
           <View style={styles.rightActions}>
-            {/* User Profile Avatar with dynamic Follow button */}
+            {/* User Profile Avatar - tap to visit profile */}
             <View style={styles.avatarContainer}>
-              <TouchableOpacity onPress={() => handleFollow(item.id)}>
+              <TouchableOpacity onPress={() => handleAvatarPress(item)}>
                 <Image source={{ uri: item.userAvatar }} style={styles.avatarImg as any} />
               </TouchableOpacity>
               {!item.isFollowed && (
@@ -377,7 +493,7 @@ const HomeScreen = () => {
             </TouchableOpacity>
 
             {/* Rotating Disc */}
-            <RotatingDisc isPlaying={isPlaying} />
+            <RotatingDisc isPlaying={isActiveIndex && !isManuallyPaused && appIsActive} />
           </View>
         </View>
       </View>
@@ -417,17 +533,44 @@ const HomeScreen = () => {
         </TouchableOpacity>
       </SafeAreaView>
 
+      {/* Loading State */}
+      {isLoadingFeed && (
+        <View style={styles.feedLoadingOverlay}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.feedLoadingText}>Chargement des vidéos...</Text>
+        </View>
+      )}
+
+      {/* Empty State */}
+      {!isLoadingFeed && videoFeed.length === 0 && (
+        <View style={styles.feedEmptyState}>
+          <Icon name="videocam-off-outline" size={64} color="rgba(255,255,255,0.2)" />
+          <Text style={styles.feedEmptyText}>Aucune vidéo pour l'instant</Text>
+          <Text style={styles.feedEmptySub}>Soyez le premier à publier une vidéo !</Text>
+        </View>
+      )}
+
       {/* Video Feed */}
-      <FlatList
-        data={videoFeed}
-        keyExtractor={item => item.id}
-        renderItem={renderVideoItem}
-        pagingEnabled={true}
-        showsVerticalScrollIndicator={false}
-        onViewableItemsChanged={onViewableItemsChanged}
-        viewabilityConfig={viewabilityConfig}
-        removeClippedSubviews={true}
-      />
+      {!isLoadingFeed && videoFeed.length > 0 && (
+        <FlatList
+          data={videoFeed}
+          keyExtractor={item => item.id}
+          renderItem={renderVideoItem}
+          pagingEnabled={true}
+          showsVerticalScrollIndicator={false}
+          onViewableItemsChanged={onViewableItemsChanged}
+          viewabilityConfig={viewabilityConfig}
+          removeClippedSubviews={true}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={() => loadFeed(true)}
+              tintColor={colors.primary}
+              colors={[colors.primary]}
+            />
+          }
+        />
+      )}
 
       {/* Bottom Sheet Comments Modal */}
       <Modal
@@ -973,6 +1116,59 @@ const styles = StyleSheet.create({
     color: colors.white,
     fontSize: 15,
     fontWeight: '600',
+  },
+  // Pause/Play overlay
+  pauseOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 5,
+  },
+  pauseIconWrapper: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  // Feed loading & empty states
+  feedLoadingOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: colors.black,
+  },
+  feedLoadingText: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 14,
+    marginTop: 16,
+    fontWeight: '500',
+  },
+  feedEmptyState: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: colors.black,
+    paddingHorizontal: 40,
+  },
+  feedEmptyText: {
+    color: colors.white,
+    fontSize: 18,
+    fontWeight: '700',
+    marginTop: 20,
+    textAlign: 'center',
+  },
+  feedEmptySub: {
+    color: 'rgba(255,255,255,0.45)',
+    fontSize: 14,
+    marginTop: 8,
+    textAlign: 'center',
+    lineHeight: 20,
   },
 });
 

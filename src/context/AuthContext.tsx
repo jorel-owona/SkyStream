@@ -25,6 +25,7 @@ export interface UserProfile {
   photoURL: string | null;
   isGuest: boolean;
   bio?: string;
+  website?: string;
 }
 
 interface AuthContextType {
@@ -34,7 +35,7 @@ interface AuthContextType {
   loginWithGoogle: () => Promise<void>;
   loginWithApple: () => Promise<void>;
   logout: () => Promise<void>;
-  updateProfile: (displayName: string, bio: string, photoURL: string) => Promise<void>;
+  updateProfile: (displayName: string, bio: string, photoURL: string, website?: string) => Promise<void>;
   bookmarkedIds: string[];
   likedIds: string[];
   toggleBookmark: (videoId: string) => void;
@@ -76,14 +77,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (firebaseUser) {
         setUser((prev) => ({
           uid: firebaseUser.uid,
-          displayName: firebaseUser.displayName || 'Utilisateur Google',
+          displayName: firebaseUser.displayName || null,
           email: firebaseUser.email,
-          photoURL: firebaseUser.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
+          photoURL: firebaseUser.photoURL || null,
           isGuest: false,
-          bio: prev?.bio || 'Créateur de contenu sur StreamSky. 🔥',
+          bio: prev?.bio || '',
         }));
       } else {
-        // If not authenticated, keep state as is unless we had a Firebase user.
         setUser((prev) => (prev && !prev.isGuest ? null : prev));
       }
       setLoading(false);
@@ -99,26 +99,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (userCredential.user) {
         setUser({
           uid: userCredential.user.uid,
-          displayName: 'Invité',
+          displayName: null, // Force to choose a username (no default 'Invité')
           email: null,
-          photoURL: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
+          photoURL: null,
           isGuest: true,
-          bio: 'Bienvenue sur mon profil StreamSky ! ✨',
+          bio: '',
         });
       }
       setLoading(false);
     } catch (error: any) {
-      console.warn('Anonymous sign-in failed, using mock guest:', error);
-      // Fallback to offline guest user
-      setUser({
-        uid: 'guest_' + Math.random().toString(36).substr(2, 9),
-        displayName: 'Invité',
-        email: null,
-        photoURL: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
-        isGuest: true,
-        bio: 'Bienvenue sur mon profil StreamSky ! ✨',
-      });
+      console.error('Anonymous sign-in failed:', error);
       setLoading(false);
+      Alert.alert('Erreur', "Impossible de se connecter en mode invité. Veuillez réessayer.");
     }
   };
 
@@ -130,23 +122,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!GoogleSignin || !GOOGLE_WEB_CLIENT_ID) {
         setLoading(false);
         Alert.alert(
-          'Mode Simulation (Configuration Google manquante)',
-          'La clé Web Client ID Firebase est manquante dans AuthContext.tsx. Connexion en mode simulation avec le compte de test @jorel_owona.',
-          [
-            {
-              text: 'Continuer',
-              onPress: () => {
-                setUser({
-                  uid: 'simulated_jorel_owona',
-                  displayName: 'Jorel Owona',
-                  email: 'jorel@streamsky.app',
-                  photoURL: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
-                  isGuest: false,
-                  bio: 'Créateur de contenu sur StreamSky. 🔥',
-                });
-              }
-            }
-          ]
+          'Configuration manquante',
+          'La configuration Google Sign-In est incomplète. Vérifiez le Web Client ID Firebase.'
         );
         return;
       }
@@ -169,11 +146,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (userCredential.user) {
         setUser({
           uid: userCredential.user.uid,
-          displayName: userCredential.user.displayName || 'Utilisateur Google',
+          displayName: userCredential.user.displayName || null,
           email: userCredential.user.email,
-          photoURL: userCredential.user.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
+          photoURL: userCredential.user.photoURL || null,
           isGuest: false,
-          bio: 'Nouveau créateur de contenu sur StreamSky. Suivez mes prochaines vidéos ! 🎬🔥',
+          bio: '',
         });
       }
       setLoading(false);
@@ -181,19 +158,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.error('Google Sign In Error:', error);
       setLoading(false);
       Alert.alert(
-        'Mode Simulation (Erreur Google Sign-In)',
-        `Une erreur est survenue lors de la connexion Google (${error.message || error}). Connexion en mode simulation avec le compte de test @jorel_owona.`,
+        'Connexion Google impossible',
+        `La connexion Google a échoué (${error.message || 'Erreur de configuration'}). Voulez-vous créer un compte de test pour explorer l'application ?`,
         [
+          { text: 'Annuler', style: 'cancel' },
           {
-            text: 'Continuer',
+            text: 'Créer un Compte de Test',
             onPress: () => {
               setUser({
-                uid: 'simulated_jorel_owona',
-                displayName: 'Jorel Owona',
-                email: 'jorel@streamsky.app',
-                photoURL: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
+                uid: 'test_' + Math.random().toString(36).substring(2, 9),
+                displayName: null, // triggers username picker
+                email: 'test@streamsky.app',
+                photoURL: null,
                 isGuest: false,
-                bio: 'Créateur de contenu sur StreamSky. 🔥',
+                bio: 'Compte de test StreamSky 🚀',
               });
             }
           }
@@ -236,11 +214,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (userCredential.user) {
           setUser({
             uid: userCredential.user.uid,
-            displayName: userCredential.user.displayName || 'Utilisateur Apple',
+            displayName: userCredential.user.displayName || null,
             email: userCredential.user.email,
-            photoURL: userCredential.user.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
+            photoURL: userCredential.user.photoURL || null,
             isGuest: false,
-            bio: 'Créateur de contenu sur StreamSky via Apple. 🍏🔥',
+            bio: '',
           });
         }
       } else {
@@ -274,7 +252,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(null);
   };
 
-  const updateProfile = async (displayName: string, bio: string, photoURL: string) => {
+  const updateProfile = async (displayName: string, bio: string, photoURL: string, website?: string) => {
     setUser((prev) => {
       if (!prev) return null;
       return {
@@ -282,6 +260,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         displayName,
         bio,
         photoURL,
+        website: website !== undefined ? website : prev.website,
       };
     });
 

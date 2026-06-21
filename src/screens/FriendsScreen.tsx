@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,8 @@ import {
   Dimensions,
   SafeAreaView,
   Alert,
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import Video from 'react-native-video';
@@ -17,7 +19,10 @@ import LinearGradient from 'react-native-linear-gradient';
 import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
 import { useAuth } from '../context/AuthContext';
-import { sampleVideos, VideoItem } from '../services/CloudinaryService';
+import { useIsFocused } from '@react-navigation/native';
+
+import { sampleVideos, VideoItem, supabaseVideoToItem } from '../services/CloudinaryService';
+import { supabaseService } from '../services/SupabaseService';
 
 const { width, height } = Dimensions.get('window');
 
@@ -30,9 +35,36 @@ interface StoryItem {
 }
 
 const FriendsScreen = () => {
-  const { user, likedIds, toggleLike: toggleLikeContext, bookmarkedIds, toggleBookmark, setIsCameraOpen, setCameraMode } = useAuth();
-  const [friendsFeed, setFriendsFeed] = useState<VideoItem[]>(sampleVideos.slice(1, 3)); // show a couple videos for friends
+  const { user, logout, likedIds, toggleLike: toggleLikeContext, bookmarkedIds, toggleBookmark, setIsCameraOpen, setCameraMode } = useAuth();
+  const isFocused = useIsFocused();
+  const isGuest = user?.isGuest ?? true;
+  const [friendsFeed, setFriendsFeed] = useState<VideoItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [activeVideoIndex, setActiveVideoIndex] = useState(0);
+  const [manuallyPausedMap, setManuallyPausedMap] = useState<Record<string, boolean>>({});
+
+
+  const loadFeed = useCallback(async (isRefresh = false) => {
+    try {
+      if (isRefresh) setIsRefreshing(true);
+      else setIsLoading(true);
+
+      const supabaseVideos = await supabaseService.fetchFollowedUserVideos();
+      const supabaseItems = supabaseVideos.map(supabaseVideoToItem);
+      setFriendsFeed(supabaseItems);
+    } catch (error) {
+      console.error('[FriendsScreen] Erreur chargement feed:', error);
+      setFriendsFeed([]);
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadFeed();
+  }, [loadFeed]);
   
   const viewabilityConfig = useRef({
     itemVisiblePercentThreshold: 50,
@@ -155,7 +187,8 @@ const FriendsScreen = () => {
   };
 
   const renderFeedItem = ({ item, index }: { item: VideoItem; index: number }) => {
-    const isPlaying = index === activeVideoIndex;
+    const isPlaying = index === activeVideoIndex && isFocused;
+    const isPaused = !isPlaying || !!manuallyPausedMap[item.id];
     
     return (
       <View style={styles.feedItemContainer}>
@@ -174,19 +207,37 @@ const FriendsScreen = () => {
         </View>
 
         {/* Video Player */}
-        <View style={styles.videoWrapper}>
+        <TouchableOpacity
+          activeOpacity={1}
+          style={styles.videoWrapper}
+          onPress={() => {
+            setManuallyPausedMap(prev => ({
+              ...prev,
+              [item.id]: !prev[item.id]
+            }));
+          }}
+        >
           <Video
-            source={{ uri: item.videoUrl }}
+            source={{
+              uri: item.videoUrl,
+              ...(item.videoUrl?.includes('.m3u8') && { type: 'application/x-mpegurl' }),
+            }}
             style={styles.video}
             resizeMode="cover"
             repeat={true}
-            paused={!isPlaying}
-            muted={true} // start muted to follow mobile autoplays rules
+            paused={isPaused}
+            muted={true}
             playInBackground={false}
             playWhenInactive={false}
             onError={(e) => console.log('Friends video playback error:', e)}
           />
-        </View>
+          {/* Pause overlay icon on FriendsScreen */}
+          {!!manuallyPausedMap[item.id] && (
+            <View style={styles.friendsPauseOverlay}>
+              <Icon name="play" size={40} color={colors.white} />
+            </View>
+          )}
+        </TouchableOpacity>
 
         {/* Post Actions (Likes, Comments, Shares) */}
         <View style={styles.postFooter}>
@@ -229,6 +280,37 @@ const FriendsScreen = () => {
     );
   };
 
+  if (isGuest) {
+    return (
+      <SafeAreaView style={styles.container}>
+        {/* Top Navbar */}
+        <View style={styles.header}>
+          <View style={styles.headerSpacer} />
+          <Text style={styles.headerTitle}>Ami(e)s</Text>
+          <View style={styles.headerSpacer} />
+        </View>
+
+        <View style={styles.guestCenterContainer}>
+          <View style={styles.guestIconWrapper}>
+            <Icon name="people-outline" size={50} color={colors.primary} />
+          </View>
+          <Text style={styles.guestTitle}>Suivez vos ami(e)s</Text>
+          <Text style={styles.guestSubtitle}>
+            Les vidéos des personnes que vous suivez s'affichent ici. Connectez-vous pour commencer à les suivre.
+          </Text>
+          <TouchableOpacity 
+            style={styles.guestButton}
+            onPress={logout}
+          >
+            <Text style={styles.guestButtonText}>
+              Se connecter / S'inscrire
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       {/* Top Navbar */}
@@ -240,26 +322,45 @@ const FriendsScreen = () => {
         </TouchableOpacity>
       </View>
 
-      <FlatList
-        data={friendsFeed}
-        keyExtractor={item => item.id}
-        renderItem={renderFeedItem}
-        showsVerticalScrollIndicator={false}
-        ListHeaderComponent={
-          <View style={styles.storiesContainer}>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.storiesScroll}
-            >
-              {stories.map(renderStoryItem)}
-            </ScrollView>
-            <View style={styles.divider} />
-          </View>
-        }
-        onViewableItemsChanged={onViewableItemsChanged}
-        viewabilityConfig={viewabilityConfig}
-      />
+      {isLoading ? (
+        <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 40 }} />
+      ) : (
+        <FlatList
+          data={friendsFeed}
+          keyExtractor={item => item.id}
+          renderItem={renderFeedItem}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={() => loadFeed(true)}
+              tintColor={colors.primary}
+            />
+          }
+          ListHeaderComponent={
+            <View style={styles.storiesContainer}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.storiesScroll}
+              >
+                {stories.map(renderStoryItem)}
+              </ScrollView>
+              <View style={styles.divider} />
+            </View>
+          }
+          ListEmptyComponent={
+            <View style={{ alignItems: 'center', paddingTop: 60 }}>
+              <Icon name="videocam-outline" size={48} color={colors.textSecondary} />
+              <Text style={{ color: colors.textSecondary, marginTop: 12, fontSize: 14 }}>
+                Aucune vidéo publiée pour l'instant
+              </Text>
+            </View>
+          }
+          onViewableItemsChanged={onViewableItemsChanged}
+          viewabilityConfig={viewabilityConfig}
+        />
+      )}
     </SafeAreaView>
   );
 };
@@ -437,6 +538,59 @@ const styles = StyleSheet.create({
   },
   descriptionUser: {
     fontWeight: '600',
+  },
+  friendsPauseOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.25)',
+  },
+  guestCenterContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+    marginTop: -40,
+  },
+  guestIconWrapper: {
+    width: 110,
+    height: 110,
+    borderRadius: 55,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 24,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  guestTitle: {
+    color: colors.white,
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  guestSubtitle: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 32,
+  },
+  guestButton: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: 28,
+    paddingVertical: 14,
+    borderRadius: 25,
+  },
+  guestButtonText: {
+    color: colors.white,
+    fontWeight: '700',
+    fontSize: 14,
   },
 });
 

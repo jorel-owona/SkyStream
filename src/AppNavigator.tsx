@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { NavigationContainer } from '@react-navigation/native';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Modal } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Modal, TextInput, Alert } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 
 import HomeScreen from './screens/HomeScreen';
@@ -137,6 +137,9 @@ const AppNavigator = () => {
             >
               <CameraScreen onClose={() => setIsCameraOpen(false)} initialMode={cameraMode} />
             </Modal>
+
+            {/* Username Selection Modal */}
+            <UsernamePromptModal />
           </>
         ) : (
           <LandingScreen />
@@ -242,6 +245,142 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontSize: 14,
   },
+  usernameOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  usernameModalContent: {
+    width: '100%',
+    backgroundColor: '#1E152E',
+    borderRadius: 16,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    alignItems: 'center',
+  },
+  usernameModalTitle: {
+    color: colors.white,
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  usernameModalSub: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 24,
+  },
+  usernameInputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderRadius: 8,
+    height: 50,
+    paddingHorizontal: 16,
+    width: '100%',
+    marginBottom: 24,
+  },
+  atSymbol: {
+    color: colors.primary,
+    fontSize: 18,
+    fontWeight: '700',
+    marginRight: 4,
+  },
+  usernameInput: {
+    flex: 1,
+    color: colors.white,
+    fontSize: 16,
+    padding: 0,
+  },
+  confirmBtn: {
+    backgroundColor: colors.primary,
+    borderRadius: 25,
+    height: 50,
+    width: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  confirmBtnText: {
+    color: colors.black,
+    fontWeight: '700',
+    fontSize: 15,
+  },
 });
+
+// Username Prompt component to block app access until displayName is chosen
+const UsernamePromptModal = () => {
+  const { user, updateProfile } = useAuth();
+  const [username, setUsername] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+
+  const visible = !!user && (!user.displayName || user.displayName.trim() === '' || user.displayName === 'Invité');
+
+  useEffect(() => {
+    if (user && user.displayName && user.displayName !== 'Invité') {
+      const cleanName = user.displayName.toLowerCase().replace(/[^a-z0-9_]/g, '');
+      setUsername(cleanName);
+    }
+  }, [user]);
+
+  const handleConfirm = async () => {
+    const cleanUsername = username.trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
+    if (cleanUsername.length < 3) {
+      Alert.alert('Erreur', "Le nom d'utilisateur doit contenir au moins 3 caractères (lettres, chiffres et tirets bas).");
+      return;
+    }
+    try {
+      setIsSaving(true);
+      await updateProfile(cleanUsername, '', '');
+    } catch (err) {
+      Alert.alert('Erreur', "Impossible de configurer le nom d'utilisateur.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="slide">
+      <View style={styles.usernameOverlay}>
+        <View style={styles.usernameModalContent}>
+          <Text style={styles.usernameModalTitle}>Votre Pseudonyme 👤</Text>
+          <Text style={styles.usernameModalSub}>
+            Entrez un nom d'utilisateur unique pour votre compte (sans espaces).
+          </Text>
+          
+          <View style={styles.usernameInputWrapper}>
+            <Text style={styles.atSymbol}>@</Text>
+            <TextInput
+              style={styles.usernameInput}
+              value={username}
+              onChangeText={(text) => setUsername(text.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
+              placeholder="pseudonyme"
+              placeholderTextColor="rgba(255, 255, 255, 0.4)"
+              autoFocus
+              maxLength={20}
+              editable={!isSaving}
+            />
+          </View>
+
+          <TouchableOpacity 
+            style={[styles.confirmBtn, !username.trim() && { opacity: 0.5 }]} 
+            onPress={handleConfirm}
+            disabled={isSaving || !username.trim()}
+          >
+            {isSaving ? (
+              <ActivityIndicator color={colors.black} />
+            ) : (
+              <Text style={styles.confirmBtnText}>Enregistrer</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+};
 
 export default AppNavigator;

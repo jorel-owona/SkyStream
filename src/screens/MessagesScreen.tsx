@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -13,11 +13,18 @@ import {
   Dimensions,
   SafeAreaView,
   Alert,
+  Share,
+  ActivityIndicator,
+  RefreshControl,
+  ScrollView,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
+import Video from 'react-native-video';
 import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
 import { useAuth } from '../context/AuthContext';
+import { supabaseService } from '../services/SupabaseService';
+import { sampleVideos, VideoItem, supabaseVideoToItem } from '../services/CloudinaryService';
 
 const { width, height } = Dimensions.get('window');
 
@@ -37,61 +44,151 @@ interface Chat {
   unreadCount: number;
   online: boolean;
   messages: Message[];
+  isFollowNotification?: boolean;
+  isFollowedBack?: boolean;
+  senderId?: string;
 }
 
-const INITIAL_CHATS: Chat[] = [
-  {
-    id: '1',
-    name: 'Daïsy✝️💜',
-    avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150',
-    lastMessage: 'Tu as vu la nouvelle vidéo sur la page d\'accueil ? 😍',
-    time: '14:32',
-    unreadCount: 1,
-    online: true,
-    messages: [
-      { id: 'm1', senderId: 'them', text: 'Coucou ! Comment ça va ?', time: '14:28' },
-      { id: 'm2', senderId: 'me', text: 'Hello Daïsy ! Très bien et toi ?', time: '14:29' },
-      { id: 'm3', senderId: 'them', text: 'Tu as vu la nouvelle vidéo sur la page d\'accueil ? 😍', time: '14:32' },
-    ],
-  },
-  {
-    id: '2',
-    name: 'Lpb C💋',
-    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
-    lastMessage: 'On s\'organise un live ce soir ? 🎥',
-    time: 'Hier',
-    unreadCount: 0,
-    online: true,
-    messages: [
-      { id: 'm4', senderId: 'me', text: 'Hey ! Dispo pour tourner ?', time: 'Hier' },
-      { id: 'm5', senderId: 'them', text: 'On s\'organise un live ce soir ? 🎥', time: 'Hier' },
-    ],
-  },
-  {
-    id: '3',
-    name: 'Lemougou',
-    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
-    lastMessage: 'Super projet mec ! 🚀🔥',
-    time: '3 juin',
-    unreadCount: 0,
-    online: false,
-    messages: [
-      { id: 'm6', senderId: 'them', text: 'J\'adore ce que tu fais sur StreamSky !', time: '3 juin' },
-      { id: 'm7', senderId: 'me', text: 'Merci beaucoup !', time: '3 juin' },
-      { id: 'm8', senderId: 'them', text: 'Super projet mec ! 🚀🔥', time: '3 juin' },
-    ],
-  },
-];
-
 const MessagesScreen = () => {
-  const { user, logout, setIsCameraOpen, setCameraMode } = useAuth();
+  const { user, logout, setIsCameraOpen, setCameraMode, bookmarkedIds, likedIds, toggleBookmark, toggleLike } = useAuth();
   const isGuest = user?.isGuest ?? true;
 
-  const [chats, setChats] = useState<Chat[]>(INITIAL_CHATS);
+  const [chats, setChats] = useState<Chat[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedChat, setSelectedChat] = useState<Chat | null>(null);
   const [chatModalVisible, setChatModalVisible] = useState(false);
   const [inputText, setInputText] = useState('');
+
+  // Visited profile states
+  const [visitedUser, setVisitedUser] = useState<any | null>(null);
+  const [visitedUserVideos, setVisitedUserVideos] = useState<VideoItem[]>([]);
+  const [visitedUserIsFollowing, setVisitedUserIsFollowing] = useState(false);
+  const [visitedUserModalVisible, setVisitedUserModalVisible] = useState(false);
+  const [previewVideo, setPreviewVideo] = useState<VideoItem | null>(null);
+
+  const getCloudinaryThumbnail = (videoUrl: string) => {
+    try {
+      if (videoUrl.includes('/video/upload/') && videoUrl.includes('.m3u8')) {
+        return videoUrl
+          .replace('/video/upload/', '/video/upload/c_fill,w_250,h_350,so_0/')
+          .replace('.m3u8', '.jpg');
+      }
+      if (videoUrl.includes('/video/upload/')) {
+        return videoUrl
+          .replace('.mp4', '.jpg')
+          .replace('/video/upload/', '/video/upload/c_fill,w_250,h_350,so_0/');
+      }
+      return 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=200';
+    } catch {
+      return 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=200';
+    }
+  };
+
+  const loadMessagesAndNotifications = useCallback(async (isRefresh = false) => {
+    if (isGuest) {
+      setIsLoading(false);
+      setIsRefreshing(false);
+      return;
+    }
+    try {
+      if (isRefresh) {
+        setIsRefreshing(true);
+      } else {
+        setIsLoading(true);
+      }
+      
+      // 1. Fetch notifications (follows)
+      const dbNotifs = await supabaseService.fetchNotifications();
+      const followNotifs = dbNotifs.filter(n => n.type === 'follow');
+      
+      const followsPromises = followNotifs.map(n => supabaseService.checkIfFollowing(n.sender_id));
+      const followsResults = await Promise.all(followsPromises);
+
+      const notifChats: Chat[] = followNotifs.map((n, idx) => ({
+        id: n.id,
+        name: n.sender_name || 'Abonné StreamSky',
+        avatar: n.sender_avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
+        lastMessage: 'S\'est abonné(e) à votre compte.',
+        time: new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        unreadCount: n.is_read ? 0 : 1,
+        online: false,
+        isFollowNotification: true,
+        isFollowedBack: followsResults[idx],
+        senderId: n.sender_id,
+        messages: [
+          {
+            id: n.id,
+            senderId: n.sender_id,
+            text: `Bonjour ! Je m'appelle ${n.sender_name || 'un abonné'} et je viens de m'abonner à votre compte StreamSky. J'adore vos vidéos ! 🎬✨`,
+            time: new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          }
+        ]
+      }));
+
+      // 2. Fetch direct messages
+      const dbMsgs = await supabaseService.fetchDirectMessages();
+      const currentUserId = supabaseService.getFirebaseUid();
+      const chatsMap: Record<string, Message[]> = {};
+      
+      dbMsgs.forEach((m) => {
+        const otherUserId = m.sender_id === currentUserId ? m.recipient_id : m.sender_id;
+        if (!chatsMap[otherUserId]) {
+          chatsMap[otherUserId] = [];
+        }
+        chatsMap[otherUserId].push({
+          id: m.id,
+          senderId: m.sender_id === currentUserId ? 'me' : 'them',
+          text: m.text,
+          time: new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        });
+      });
+
+      const allVideos = await supabaseService.fetchVideos();
+      const userDetailsMap: Record<string, { name: string; avatar: string }> = {};
+      allVideos.forEach(v => {
+        if (v.user_id && !userDetailsMap[v.user_id]) {
+          userDetailsMap[v.user_id] = {
+            name: v.display_name || `user_${v.user_id.substring(0, 8)}`,
+            avatar: v.photo_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
+          };
+        }
+      });
+
+      const dmChats: Chat[] = Object.keys(chatsMap).map(otherId => {
+        const msgs = chatsMap[otherId];
+        const lastMsg = msgs[msgs.length - 1];
+        const details = userDetailsMap[otherId] || {
+          name: `user_${otherId.substring(0, 8)}`,
+          avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
+        };
+        
+        return {
+          id: `chat-${otherId}`,
+          name: details.name,
+          avatar: details.avatar,
+          lastMessage: lastMsg.text,
+          time: lastMsg.time,
+          unreadCount: 0,
+          online: false,
+          senderId: otherId,
+          messages: msgs,
+        };
+      });
+
+      setChats([...notifChats, ...dmChats]);
+    } catch (e) {
+      console.warn('[MessagesScreen] Erreur lors du chargement des messages:', e);
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
+  }, [isGuest]);
+
+  useEffect(() => {
+    loadMessagesAndNotifications();
+  }, [loadMessagesAndNotifications]);
 
   // Handle opening a chat
   const handleOpenChat = (chat: Chat) => {
@@ -114,34 +211,67 @@ const MessagesScreen = () => {
   };
 
   // Handle sending message
-  const handleSendMessage = () => {
-    if (!inputText.trim() || !selectedChat) return;
-
-    const newMessage: Message = {
-      id: Math.random().toString(36).substr(2, 9),
-      senderId: 'me',
-      text: inputText.trim(),
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    };
-
-    // Update messages in modal and chat list
-    const updatedMessages = [...selectedChat.messages, newMessage];
-    setSelectedChat((prev) => prev ? { ...prev, messages: updatedMessages } : null);
-
-    setChats((prev) =>
-      prev.map((c) =>
-        c.id === selectedChat.id
-          ? {
-              ...c,
-              lastMessage: newMessage.text,
-              time: newMessage.time,
-              messages: updatedMessages,
-            }
-          : c
-      )
-    );
-
+  const handleSendMessage = async () => {
+    if (!inputText.trim() || !selectedChat || !selectedChat.senderId) return;
+    const text = inputText.trim();
     setInputText('');
+
+    try {
+      await supabaseService.sendDirectMessage(selectedChat.senderId, text);
+      loadMessagesAndNotifications();
+    } catch (e) {
+      console.warn('[MessagesScreen] Erreur envoi message:', e);
+    }
+  };
+
+  const handleFollowBack = async (chat: Chat) => {
+    if (!chat.senderId) return;
+    try {
+      const success = await supabaseService.followUser(chat.senderId);
+      if (success) {
+        setChats(prev => prev.map(c => c.senderId === chat.senderId ? { ...c, isFollowedBack: true } : c));
+        setVisitedUserIsFollowing(true);
+        Alert.alert('Succès', `Vous suivez maintenant ${chat.name} ! 🎉`);
+      }
+    } catch (e) {
+      console.warn('[MessagesScreen] Erreur abonnement en retour:', e);
+    }
+  };
+
+  const openVisitedUserProfile = async (chat: Chat) => {
+    if (!chat.senderId) return;
+    try {
+      setVisitedUser({
+        uid: chat.senderId,
+        displayName: chat.name,
+        photoURL: chat.avatar,
+        bio: 'Créateur de contenu StreamSky 🚀 Camerounais et fier ! ✨',
+      });
+      
+      const isFollowing = await supabaseService.checkIfFollowing(chat.senderId);
+      setVisitedUserIsFollowing(isFollowing);
+      
+      const allVideos = await supabaseService.fetchVideos();
+      const userVideos = allVideos
+        .filter(v => v.user_id === chat.senderId)
+        .map(supabaseVideoToItem);
+      
+      if (userVideos.length === 0) {
+        const seeded = sampleVideos.map(v => ({
+          ...v,
+          username: chat.name.toLowerCase().replace(/\s+/g, '_').replace('@', ''),
+          userId: chat.senderId,
+          views: Math.floor(Math.random() * 800) + 150
+        }));
+        setVisitedUserVideos(seeded);
+      } else {
+        setVisitedUserVideos(userVideos);
+      }
+      
+      setVisitedUserModalVisible(true);
+    } catch (e) {
+      console.warn('[MessagesScreen] Erreur ouverture profil visiteur:', e);
+    }
   };
 
   // Filter chats by search
@@ -280,31 +410,81 @@ const MessagesScreen = () => {
         data={filteredChats}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.chatList}
-        renderItem={({ item }) => (
-          <TouchableOpacity style={styles.chatItem} onPress={() => handleOpenChat(item)}>
-            <View style={styles.avatarWrapper}>
-              <Image source={{ uri: item.avatar }} style={styles.chatAvatar} />
-              {item.online && <View style={styles.onlineBadge} />}
-            </View>
-
-            <View style={styles.chatDetails}>
-              <View style={styles.chatHeaderRow}>
-                <Text style={styles.chatName}>{item.name}</Text>
-                <Text style={styles.chatTime}>{item.time}</Text>
-              </View>
-              <View style={styles.chatMessageRow}>
-                <Text style={[styles.chatMessage, item.unreadCount > 0 && styles.unreadMessage]} numberOfLines={1}>
-                  {item.lastMessage}
-                </Text>
-                {item.unreadCount > 0 && (
-                  <View style={styles.unreadBadge}>
-                    <Text style={styles.unreadText}>{item.unreadCount}</Text>
+        renderItem={({ item }) => {
+          if (item.isFollowNotification) {
+            return (
+              <View style={styles.chatItem}>
+                <TouchableOpacity onPress={() => openVisitedUserProfile(item)}>
+                  <View style={styles.avatarWrapper}>
+                    <Image source={{ uri: item.avatar }} style={styles.chatAvatar} />
                   </View>
-                )}
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                  style={styles.chatDetails} 
+                  onPress={() => openVisitedUserProfile(item)}
+                >
+                  <View style={styles.chatHeaderRow}>
+                    <Text style={styles.chatName}>{item.name}</Text>
+                    <Text style={styles.chatTime}>{item.time}</Text>
+                  </View>
+                  <View style={styles.chatMessageRow}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, flexWrap: 'wrap' }}>
+                      <Text style={[styles.chatMessage, { flex: 0, marginRight: 6 }]} numberOfLines={1}>
+                        {item.lastMessage}
+                      </Text>
+                      <View style={styles.followerBadge}>
+                        <Text style={styles.followerBadgeText}>Follower</Text>
+                      </View>
+                    </View>
+                  </View>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.followBackBtn,
+                    item.isFollowedBack ? styles.followedBackBtn : styles.notFollowedBackBtn
+                  ]}
+                  onPress={() => handleFollowBack(item)}
+                  disabled={item.isFollowedBack}
+                >
+                  <Text style={[
+                    styles.followBackBtnText,
+                    item.isFollowedBack ? styles.followedBackBtnText : styles.notFollowedBackBtnText
+                  ]}>
+                    {item.isFollowedBack ? 'Suivi' : 'Suivre'}
+                  </Text>
+                </TouchableOpacity>
               </View>
-            </View>
-          </TouchableOpacity>
-        )}
+            );
+          }
+
+          return (
+            <TouchableOpacity style={styles.chatItem} onPress={() => handleOpenChat(item)}>
+              <View style={styles.avatarWrapper}>
+                <Image source={{ uri: item.avatar }} style={styles.chatAvatar} />
+                {item.online && <View style={styles.onlineBadge} />}
+              </View>
+
+              <View style={styles.chatDetails}>
+                <View style={styles.chatHeaderRow}>
+                  <Text style={styles.chatName}>{item.name}</Text>
+                  <Text style={styles.chatTime}>{item.time}</Text>
+                </View>
+                <View style={styles.chatMessageRow}>
+                  <Text style={[styles.chatMessage, item.unreadCount > 0 && styles.unreadMessage]} numberOfLines={1}>
+                    {item.lastMessage}
+                  </Text>
+                  {item.unreadCount > 0 && (
+                    <View style={styles.unreadBadge}>
+                      <Text style={styles.unreadText}>{item.unreadCount}</Text>
+                    </View>
+                  )}
+                </View>
+              </View>
+            </TouchableOpacity>
+          );
+        }}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Icon name="chatbubbles-outline" size={60} color="rgba(255, 255, 255, 0.15)" />
@@ -412,6 +592,281 @@ const MessagesScreen = () => {
           </KeyboardAvoidingView>
         </Modal>
       )}
+
+      {/* Visited User Profile Modal */}
+      {visitedUser && (
+        <Modal
+          visible={visitedUserModalVisible}
+          animationType="slide"
+          transparent={true}
+          onRequestClose={() => setVisitedUserModalVisible(false)}
+        >
+          <View style={styles.visitedProfileContainer}>
+            {/* Header */}
+            <View style={styles.visitedHeader}>
+              <TouchableOpacity onPress={() => setVisitedUserModalVisible(false)} style={styles.backButton}>
+                <Icon name="chevron-back" size={26} color={colors.white} />
+              </TouchableOpacity>
+              <Text style={styles.visitedHeaderTitle}>{visitedUser.displayName}</Text>
+              <View style={{ width: 26 }} />
+            </View>
+
+            <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+              {/* Profile Info */}
+              <View style={styles.profileInfo}>
+                <View style={styles.avatarContainer}>
+                  {visitedUser.photoURL ? (
+                    <Image source={{ uri: visitedUser.photoURL }} style={styles.avatarImage} />
+                  ) : (
+                    <View style={styles.avatarPlaceholder}>
+                      <Icon name="person" size={50} color={colors.background} />
+                    </View>
+                  )}
+                </View>
+                
+                <Text style={styles.username}>@{visitedUser.displayName.toLowerCase().replace(/\s+/g, '_')}</Text>
+
+                {/* Followers / Stats */}
+                <View style={styles.statsContainer}>
+                  <View style={styles.statItem}>
+                    <Text style={styles.statCount}>24</Text>
+                    <Text style={styles.statLabel}>Abonnements</Text>
+                  </View>
+                  <View style={styles.statDivider} />
+                  <View style={styles.statItem}>
+                    <Text style={styles.statCount}>108</Text>
+                    <Text style={styles.statLabel}>Abonnés</Text>
+                  </View>
+                  <View style={styles.statDivider} />
+                  <View style={styles.statItem}>
+                    <Text style={styles.statCount}>
+                      {visitedUserVideos.reduce((acc, curr) => acc + (curr.likes || 0), 0) || 542}
+                    </Text>
+                    <Text style={styles.statLabel}>J'aime</Text>
+                  </View>
+                </View>
+
+                {/* Action Buttons */}
+                <View style={styles.visitedActionButtons}>
+                  <TouchableOpacity
+                    style={[
+                      styles.visitedFollowBtn,
+                      visitedUserIsFollowing ? styles.visitedFollowBtnActive : styles.visitedFollowBtnInactive
+                    ]}
+                    onPress={async () => {
+                      if (visitedUserIsFollowing) {
+                        Alert.alert('Info', `Vous suivez déjà ${visitedUser.displayName}.`);
+                      } else {
+                        const success = await supabaseService.followUser(visitedUser.uid);
+                        if (success) {
+                          setVisitedUserIsFollowing(true);
+                          setChats(prev => prev.map(c => c.senderId === visitedUser.uid ? { ...c, isFollowedBack: true } : c));
+                          Alert.alert('Succès', `Vous suivez maintenant ${visitedUser.displayName} ! 🎉`);
+                        }
+                      }
+                    }}
+                  >
+                    <Text style={[
+                      styles.visitedFollowBtnText,
+                      visitedUserIsFollowing ? styles.visitedFollowBtnTextActive : styles.visitedFollowBtnTextInactive
+                    ]}>
+                      {visitedUserIsFollowing ? 'Suivi' : 'Suivre en retour'}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.visitedMessageBtn}
+                    onPress={() => {
+                      setVisitedUserModalVisible(false);
+                      const matchingChat = chats.find(c => c.senderId === visitedUser.uid);
+                      if (matchingChat) {
+                        handleOpenChat(matchingChat);
+                      } else {
+                        const newChat: Chat = {
+                          id: `chat-${visitedUser.uid}`,
+                          name: visitedUser.displayName,
+                          avatar: visitedUser.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
+                          lastMessage: '',
+                          time: '',
+                          unreadCount: 0,
+                          online: false,
+                          senderId: visitedUser.uid,
+                          messages: []
+                        };
+                        handleOpenChat(newChat);
+                      }
+                    }}
+                  >
+                    <Text style={styles.visitedMessageBtnText}>Message</Text>
+                  </TouchableOpacity>
+                </View>
+                
+                {/* Biography */}
+                <View style={styles.bioContainer}>
+                  <Text style={styles.bioText}>
+                    {visitedUser.bio || 'Aucune biographie rédigée.'}
+                  </Text>
+                  <View style={styles.briefTextContainer}>
+                    <Icon name="sparkles-outline" size={12} color={colors.secondary} style={{ marginRight: 4 }} />
+                    <Text style={styles.briefText}>
+                      Membre StreamSky vérifié 💫
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* Tab Grid Title */}
+              <View style={styles.tabsContainer}>
+                <View style={[styles.tab, styles.activeTab, { flex: 1, paddingVertical: 12 }]}>
+                  <Icon name="grid-outline" size={22} color={colors.white} />
+                </View>
+              </View>
+
+              {/* Video Grid */}
+              {visitedUserVideos.length === 0 ? (
+                <View style={styles.emptyGridContainer}>
+                  <Icon name="videocam" size={48} color="rgba(255, 255, 255, 0.2)" />
+                  <Text style={styles.emptyGridText}>Aucune publication</Text>
+                  <Text style={styles.emptyGridSub}>Les créations de cet utilisateur s'afficheront ici.</Text>
+                </View>
+              ) : (
+                <View style={styles.gridContainer}>
+                  {visitedUserVideos.map((video) => (
+                    <TouchableOpacity key={video.id} style={styles.gridItem} onPress={() => setPreviewVideo(video)}>
+                      <Image source={{ uri: video.thumbnailUrl || getCloudinaryThumbnail(video.videoUrl) }} style={styles.gridThumbnail} />
+                      <View style={styles.gridLikesOverlay}>
+                        <Icon name="play-outline" size={12} color={colors.white} style={styles.playIcon} />
+                        <Text style={styles.gridLikesText}>
+                          {video.views !== undefined && video.views > 0 ? video.views : Math.floor(video.likes * 4.2) + 24}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </ScrollView>
+          </View>
+        </Modal>
+      )}
+
+      {/* Video Preview Modal */}
+      <Modal
+        visible={previewVideo !== null}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setPreviewVideo(null)}
+      >
+        <View style={styles.previewOverlay}>
+          {previewVideo && (
+            <View style={styles.previewVideoWrapper}>
+              <Video
+                source={{
+                  uri: previewVideo.videoUrl,
+                  ...(previewVideo.videoUrl?.includes('.m3u8') && { type: 'application/x-mpegurl' }),
+                }}
+                style={styles.previewVideoPlayer}
+                resizeMode="cover"
+                repeat={true}
+                paused={false}
+                muted={false}
+                onError={(e) => console.log('Preview Video Error:', e)}
+              />
+
+              <TouchableOpacity 
+                style={styles.previewCloseBtn} 
+                onPress={() => setPreviewVideo(null)}
+              >
+                <Icon name="chevron-back" size={28} color={colors.white} />
+              </TouchableOpacity>
+
+              {/* Action buttons on the right side */}
+              <View style={styles.previewRightActions}>
+                {/* Like Button */}
+                <TouchableOpacity 
+                  style={styles.previewActionBtn} 
+                  onPress={() => {
+                    toggleLike(previewVideo.id);
+                  }}
+                >
+                  <View style={styles.previewActionIconWrapper}>
+                    <Icon
+                      name={likedIds.includes(previewVideo.id) ? 'heart' : 'heart-outline'}
+                      size={32}
+                      color={likedIds.includes(previewVideo.id) ? colors.error : colors.white}
+                    />
+                  </View>
+                  <Text style={styles.previewActionCount}>
+                    {previewVideo.likes + (likedIds.includes(previewVideo.id) ? 1 : 0)}
+                  </Text>
+                </TouchableOpacity>
+
+                {/* Comment Button */}
+                <TouchableOpacity 
+                  style={styles.previewActionBtn} 
+                  onPress={() => Alert.alert('Commentaires', 'Cette fonctionnalité sera bientôt intégrée au lecteur de détails ! 💬')}
+                >
+                  <View style={styles.previewActionIconWrapper}>
+                    <Icon name="chatbubble-ellipses" size={30} color={colors.white} />
+                  </View>
+                  <Text style={styles.previewActionCount}>{previewVideo.commentsCount}</Text>
+                </TouchableOpacity>
+
+                {/* Bookmark Button */}
+                <TouchableOpacity 
+                  style={styles.previewActionBtn} 
+                  onPress={() => {
+                    toggleBookmark(previewVideo.id);
+                  }}
+                >
+                  <View style={styles.previewActionIconWrapper}>
+                    <Icon
+                      name={bookmarkedIds.includes(previewVideo.id) ? 'bookmark' : 'bookmark-outline'}
+                      size={28}
+                      color={bookmarkedIds.includes(previewVideo.id) ? colors.accent : colors.white}
+                    />
+                  </View>
+                  <Text style={styles.previewActionCount}>
+                    {previewVideo.bookmarks + (bookmarkedIds.includes(previewVideo.id) ? 1 : 0)}
+                  </Text>
+                </TouchableOpacity>
+
+                {/* Share Button */}
+                <TouchableOpacity 
+                  style={styles.previewActionBtn} 
+                  onPress={async () => {
+                    try {
+                      await Share.share({
+                        message: `Découvre cette vidéo sur StreamSky de @${previewVideo.username} : ${previewVideo.videoUrl}`,
+                      });
+                    } catch (e) {
+                      console.log('Share preview error:', e);
+                    }
+                  }}
+                >
+                  <View style={styles.previewActionIconWrapper}>
+                    <Icon name="share-social" size={28} color={colors.white} />
+                  </View>
+                  <Text style={styles.previewActionCount}>{previewVideo.shares}</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Bottom metadata */}
+              <View style={styles.previewBottomMetadata}>
+                <Text style={styles.previewUserTag}>@{previewVideo.username}</Text>
+                <Text style={styles.previewVideoDesc} numberOfLines={2}>
+                  {previewVideo.description}
+                </Text>
+                <View style={styles.previewSongContainer}>
+                  <Icon name="musical-notes" size={14} color={colors.white} style={{ marginRight: 6 }} />
+                  <Text style={styles.previewSongText} numberOfLines={1}>
+                    {previewVideo.songName || 'Son original'}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          )}
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -780,6 +1235,347 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1.5,
     borderColor: colors.background,
+  },
+  followerBadge: {
+    backgroundColor: 'rgba(255, 0, 127, 0.15)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  followerBadgeText: {
+    color: colors.primary,
+    fontSize: 9,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  followBackBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    minWidth: 70,
+  },
+  notFollowedBackBtn: {
+    backgroundColor: colors.primary,
+  },
+  followedBackBtn: {
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  followBackBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  notFollowedBackBtnText: {
+    color: colors.white,
+  },
+  followedBackBtnText: {
+    color: 'rgba(255, 255, 255, 0.6)',
+  },
+  visitedProfileContainer: {
+    flex: 1,
+    backgroundColor: '#150C25',
+  },
+  visitedHeader: {
+    height: 56,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    borderBottomWidth: 0.5,
+    borderBottomColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: '#150C25',
+  },
+  visitedHeaderTitle: {
+    color: colors.white,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  scrollContent: {
+    paddingBottom: 40,
+  },
+  profileInfo: {
+    alignItems: 'center',
+    paddingVertical: 20,
+    paddingHorizontal: 16,
+  },
+  avatarContainer: {
+    position: 'relative',
+    marginBottom: 8,
+  },
+  avatarImage: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    borderWidth: 2,
+    borderColor: colors.primary,
+  },
+  avatarPlaceholder: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    backgroundColor: colors.surface,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: colors.primary,
+  },
+  username: {
+    color: colors.white,
+    fontSize: 15,
+    fontWeight: '600',
+    marginBottom: 16,
+  },
+  statsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    width: '100%',
+    marginBottom: 20,
+  },
+  statItem: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  statCount: {
+    color: colors.white,
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  statLabel: {
+    color: colors.textSecondary,
+    fontSize: 12,
+  },
+  statDivider: {
+    width: 1,
+    height: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  visitedActionButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    width: '100%',
+    marginBottom: 20,
+  },
+  visitedFollowBtn: {
+    flex: 1,
+    height: 38,
+    borderRadius: 19,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  visitedFollowBtnActive: {
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  visitedFollowBtnInactive: {
+    backgroundColor: colors.primary,
+  },
+  visitedFollowBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  visitedFollowBtnTextActive: {
+    color: 'rgba(255, 255, 255, 0.6)',
+  },
+  visitedFollowBtnTextInactive: {
+    color: colors.white,
+  },
+  visitedMessageBtn: {
+    flex: 1,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  visitedMessageBtnText: {
+    color: colors.white,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  bioContainer: {
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    marginBottom: 10,
+  },
+  bioText: {
+    color: colors.white,
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 8,
+  },
+  briefTextContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  briefText: {
+    color: colors.textSecondary,
+    fontSize: 10,
+    fontWeight: '500',
+  },
+  tabsContainer: {
+    flexDirection: 'row',
+    borderBottomWidth: 0.5,
+    borderBottomColor: 'rgba(255,255,255,0.1)',
+    marginBottom: 8,
+  },
+  tab: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+  },
+  activeTab: {
+    borderBottomWidth: 2,
+    borderBottomColor: colors.white,
+  },
+  gridContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingHorizontal: 2,
+  },
+  gridItem: {
+    width: (width - 4) / 3,
+    height: ((width - 4) / 3) * 1.4,
+    padding: 1,
+    position: 'relative',
+  },
+  gridThumbnail: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 4,
+    backgroundColor: colors.surface,
+  },
+  gridLikesOverlay: {
+    position: 'absolute',
+    bottom: 6,
+    left: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  playIcon: {
+    marginRight: 4,
+  },
+  gridLikesText: {
+    color: colors.white,
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  emptyGridContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+    paddingHorizontal: 20,
+  },
+  emptyGridText: {
+    color: colors.white,
+    fontSize: 15,
+    fontWeight: '700',
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  emptyGridSub: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    textAlign: 'center',
+  },
+  previewOverlay: {
+    flex: 1,
+    backgroundColor: '#000',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  previewVideoWrapper: {
+    width: '100%',
+    height: '100%',
+    position: 'relative',
+    backgroundColor: '#000',
+  },
+  previewVideoPlayer: {
+    width: '100%',
+    height: '100%',
+  },
+  previewCloseBtn: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 50 : 20,
+    left: 16,
+    zIndex: 10,
+    padding: 6,
+  },
+  previewRightActions: {
+    position: 'absolute',
+    right: 12,
+    bottom: height * 0.15,
+    alignItems: 'center',
+    gap: 16,
+    zIndex: 10,
+  },
+  previewActionBtn: {
+    alignItems: 'center',
+  },
+  previewActionIconWrapper: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  previewActionCount: {
+    color: colors.white,
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 4,
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  previewBottomMetadata: {
+    position: 'absolute',
+    left: 16,
+    bottom: Platform.OS === 'ios' ? 40 : 24,
+    right: 80,
+    zIndex: 10,
+  },
+  previewUserTag: {
+    color: colors.white,
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 6,
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  previewVideoDesc: {
+    color: colors.white,
+    fontSize: 14,
+    lineHeight: 18,
+    marginBottom: 10,
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  previewSongContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  previewSongText: {
+    color: colors.white,
+    fontSize: 13,
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
 });
 

@@ -1,11 +1,15 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, Image, ScrollView, TouchableOpacity, Dimensions, Alert, Modal, TextInput, KeyboardAvoidingView, Platform, Share } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, Text, StyleSheet, Image, ScrollView, TouchableOpacity, Dimensions, Alert, Modal, TextInput, KeyboardAvoidingView, Platform, Share, ActivityIndicator } from 'react-native';
 import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
 import Icon from 'react-native-vector-icons/Ionicons';
 import Video from 'react-native-video';
 import { useAuth } from '../context/AuthContext';
-import { sampleVideos, VideoItem } from '../services/CloudinaryService';
+import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
+import QRCode from 'react-native-qrcode-svg';
+
+import { sampleVideos, VideoItem, supabaseVideoToItem } from '../services/CloudinaryService';
+import { supabaseService } from '../services/SupabaseService';
 
 const { width, height } = Dimensions.get('window');
 
@@ -18,7 +22,7 @@ const PRESET_AVATARS = [
 ];
 
 const ProfileScreen = () => {
-  const { user, logout, updateProfile, bookmarkedIds, likedIds, setIsCameraOpen, setCameraMode } = useAuth();
+  const { user, logout, updateProfile, bookmarkedIds, likedIds, setIsCameraOpen, setCameraMode, toggleLike, toggleBookmark } = useAuth();
 
   // Publish shortcut handlers
   const openPublishVideo = () => {
@@ -31,21 +35,14 @@ const ProfileScreen = () => {
     setIsCameraOpen(true);
   };
 
+  const [publishMenuVisible, setPublishMenuVisible] = useState(false);
+
   const showPublishMenu = () => {
     if (isGuest) {
       Alert.alert('Connexion requise', 'Connectez-vous pour publier du contenu.');
       return;
     }
-    Alert.alert(
-      'Créer du contenu',
-      'Choisissez le type de publication',
-      [
-        { text: 'Publier une Vidéo 🎬', onPress: openPublishVideo },
-        { text: 'Créer une Story ✨', onPress: openPublishStory },
-        { text: 'Modifier le profil', onPress: openEditProfile },
-        { text: 'Annuler', style: 'cancel' },
-      ]
-    );
+    setPublishMenuVisible(true);
   };
   const [activeProfileTab, setActiveProfileTab] = useState<'posts' | 'private' | 'bookmarks' | 'likes'>('posts');
   
@@ -54,12 +51,17 @@ const ProfileScreen = () => {
   const [editName, setEditName] = useState(user?.displayName || '');
   const [editBio, setEditBio] = useState(user?.bio || '');
   const [editPhotoURL, setEditPhotoURL] = useState(user?.photoURL || PRESET_AVATARS[0]);
+  const [editWebsite, setEditWebsite] = useState(user?.website || '');
 
   // Video Preview State
   const [previewVideo, setPreviewVideo] = useState<VideoItem | null>(null);
 
   // QR Code Modal State
   const [qrModalVisible, setQrModalVisible] = useState(false);
+
+  // User's published videos from Supabase
+  const [userVideos, setUserVideos] = useState<VideoItem[]>([]);
+  const [isLoadingVideos, setIsLoadingVideos] = useState(true);
 
   const isGuest = user?.isGuest ?? true;
 
@@ -70,6 +72,31 @@ const ProfileScreen = () => {
     }
     setQrModalVisible(true);
   };
+
+  // Load user's own published videos
+  const loadUserVideos = useCallback(async () => {
+    if (isGuest) {
+      setIsLoadingVideos(false);
+      return;
+    }
+    try {
+      setIsLoadingVideos(true);
+      const allVideos = await supabaseService.fetchVideos();
+      const uid = supabaseService.getFirebaseUid();
+      const myVideos = allVideos
+        .filter(v => v.user_id === uid)
+        .map(supabaseVideoToItem);
+      setUserVideos(myVideos);
+    } catch (e) {
+      console.error('[ProfileScreen] Erreur chargement vidéos utilisateur:', e);
+    } finally {
+      setIsLoadingVideos(false);
+    }
+  }, [isGuest]);
+
+  useEffect(() => {
+    loadUserVideos();
+  }, [loadUserVideos]);
 
   const handleShareProfile = async () => {
     try {
@@ -82,50 +109,30 @@ const ProfileScreen = () => {
   };
 
   const MockQrCode = () => {
-    // 9x9 grid representation of a QR Code
-    const grid = [
-      [1, 1, 1, 1, 1, 1, 1, 1, 1],
-      [1, 0, 0, 0, 0, 0, 0, 0, 1],
-      [1, 0, 1, 1, 0, 1, 1, 0, 1],
-      [1, 0, 1, 1, 0, 1, 1, 0, 1],
-      [1, 0, 0, 0, 0, 0, 0, 0, 1],
-      [1, 0, 1, 1, 0, 1, 1, 0, 1],
-      [1, 0, 1, 1, 0, 1, 1, 0, 1],
-      [1, 0, 0, 0, 0, 0, 0, 0, 1],
-      [1, 1, 1, 1, 1, 1, 1, 1, 1],
-    ];
     return (
       <View style={styles.qrGridContainer}>
-        <View style={styles.qrGrid}>
-          {grid.map((row, rIdx) => (
-            <View key={rIdx} style={{ flexDirection: 'row' }}>
-              {row.map((cell, cIdx) => (
-                <View
-                  key={cIdx}
-                  style={{
-                    width: 18,
-                    height: 18,
-                    backgroundColor: cell === 1 ? colors.white : 'transparent',
-                    margin: 1,
-                  }}
-                />
-              ))}
-            </View>
-          ))}
-        </View>
-        <View style={styles.qrAvatarWrapper}>
-          <Image source={{ uri: user?.photoURL || PRESET_AVATARS[0] }} style={styles.qrAvatarImage} />
-        </View>
+        <QRCode
+          value={profileUrl}
+          size={180}
+          color={colors.primary}
+          backgroundColor="transparent"
+          logo={{ uri: user?.photoURL || PRESET_AVATARS[0] }}
+          logoSize={40}
+          logoBorderRadius={20}
+          logoBackgroundColor="#1E152E"
+        />
       </View>
     );
   };
-  const suivisCount = isGuest ? 0 : 124;
-  const abonneesCount = isGuest ? 0 : 374;
-  const likesCount = isGuest ? 0 : likedIds.length + 842;
+  const suivisCount = 0;
+  const abonneesCount = 0;
+  const likesCount = likedIds.length;
 
   const formattedUsername = user?.displayName
     ? `@${user.displayName.toLowerCase().replace(/\s+/g, '_')}`
     : '@streamsky_user';
+
+  const profileUrl = `https://streamsky.app/user/${(user?.displayName || 'user').toLowerCase().replace(/\s+/g, '_')}`;
 
   const handleLogout = () => {
     Alert.alert(
@@ -176,6 +183,49 @@ const ProfileScreen = () => {
     );
   };
 
+  const handleLaunchCamera = () => {
+    launchCamera(
+      {
+        mediaType: 'photo',
+        cameraType: 'back',
+        quality: 0.8,
+      },
+      (response) => {
+        if (response.didCancel) {
+          console.log('User cancelled camera');
+        } else if (response.errorCode) {
+          Alert.alert('Erreur', response.errorMessage || 'Impossible d\'ouvrir l\'appareil photo');
+        } else if (response.assets && response.assets.length > 0) {
+          const uri = response.assets[0].uri;
+          if (uri) {
+            setEditPhotoURL(uri);
+          }
+        }
+      }
+    );
+  };
+
+  const handleLaunchGallery = () => {
+    launchImageLibrary(
+      {
+        mediaType: 'photo',
+        quality: 0.8,
+      },
+      (response) => {
+        if (response.didCancel) {
+          console.log('User cancelled gallery');
+        } else if (response.errorCode) {
+          Alert.alert('Erreur', response.errorMessage || 'Impossible d\'ouvrir la galerie');
+        } else if (response.assets && response.assets.length > 0) {
+          const uri = response.assets[0].uri;
+          if (uri) {
+            setEditPhotoURL(uri);
+          }
+        }
+      }
+    );
+  };
+
   const openEditProfile = () => {
     if (isGuest) {
       Alert.alert(
@@ -191,6 +241,7 @@ const ProfileScreen = () => {
     setEditName(user?.displayName || '');
     setEditBio(user?.bio || '');
     setEditPhotoURL(user?.photoURL || PRESET_AVATARS[0]);
+    setEditWebsite(user?.website || '');
     setEditModalVisible(true);
   };
 
@@ -199,12 +250,19 @@ const ProfileScreen = () => {
       Alert.alert('Erreur', 'Le nom ne peut pas être vide.');
       return;
     }
-    await updateProfile(editName.trim(), editBio.trim(), editPhotoURL);
+    await updateProfile(editName.trim(), editBio.trim(), editPhotoURL, editWebsite.trim());
     setEditModalVisible(false);
   };
 
   const getCloudinaryThumbnail = (videoUrl: string) => {
     try {
+      // Handle HLS .m3u8 URLs from Cloudinary - extract thumbnail via image endpoint
+      if (videoUrl.includes('/video/upload/') && videoUrl.includes('.m3u8')) {
+        // Convert HLS manifest URL to a JPEG thumbnail
+        return videoUrl
+          .replace('/video/upload/', '/video/upload/c_fill,w_250,h_350,so_0/')
+          .replace('.m3u8', '.jpg');
+      }
       if (videoUrl.includes('/video/upload/')) {
         return videoUrl
           .replace('.mp4', '.jpg')
@@ -217,13 +275,15 @@ const ProfileScreen = () => {
   };
 
   const getGridVideos = (): VideoItem[] => {
-    if (isGuest) return []; // For guest, everything is at zero/empty!
     if (activeProfileTab === 'posts') {
-      return sampleVideos;
+      return userVideos;
     } else if (activeProfileTab === 'bookmarks') {
-      return sampleVideos.filter(video => bookmarkedIds.includes(video.id));
+      // Search across both real and sample videos
+      const allVideos = [...userVideos, ...sampleVideos];
+      return allVideos.filter(video => bookmarkedIds.includes(video.id));
     } else if (activeProfileTab === 'likes') {
-      return sampleVideos.filter(video => likedIds.includes(video.id));
+      const allVideos = [...userVideos, ...sampleVideos];
+      return allVideos.filter(video => likedIds.includes(video.id));
     }
     return [];
   };
@@ -313,12 +373,28 @@ const ProfileScreen = () => {
             </TouchableOpacity>
           </View>
           
-          <Text style={styles.bio}>
-            {user?.bio || (isGuest 
-              ? "Bienvenue sur mon profil StreamSky ! ✨" 
-              : "Nouveau créateur de contenu sur StreamSky. Suivez mes prochaines vidéos ! 🎬🔥"
-            )}
-          </Text>
+          {/* Biography, Link & Short Status */}
+          <View style={styles.bioContainer}>
+            <Text style={styles.bioText}>
+              {user?.bio || 'Aucune biographie rédigée.'}
+            </Text>
+            {user?.website ? (
+              <TouchableOpacity onPress={() => Alert.alert('Lien', `Ouverture de : ${user.website}`)}>
+                <View style={styles.linkRow}>
+                  <Icon name="link-outline" size={14} color={colors.primary} />
+                  <Text style={styles.clickableLink} numberOfLines={1}>
+                    {user.website}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            ) : null}
+            <View style={styles.briefTextContainer}>
+              <Icon name="sparkles-outline" size={12} color={colors.secondary} style={{ marginRight: 4 }} />
+              <Text style={styles.briefText}>
+                Membre StreamSky vérifié 💫
+              </Text>
+            </View>
+          </View>
         </View>
 
         {/* Tab Selection */}
@@ -359,6 +435,11 @@ const ProfileScreen = () => {
             <Text style={styles.emptyGridText}>Vidéos privées</Text>
             <Text style={styles.emptyGridSub}>Vos vidéos privées ne sont visibles que par vous.</Text>
           </View>
+        ) : isLoadingVideos && activeProfileTab === 'posts' ? (
+          <View style={styles.emptyGridContainer}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={[styles.emptyGridSub, { marginTop: 12 }]}>Chargement de vos vidéos...</Text>
+          </View>
         ) : gridVideos.length === 0 ? (
           <View style={styles.emptyGridContainer}>
             <Icon 
@@ -396,7 +477,9 @@ const ProfileScreen = () => {
                 <Image source={{ uri: video.thumbnailUrl || getCloudinaryThumbnail(video.videoUrl) }} style={styles.gridThumbnail} />
                 <View style={styles.gridLikesOverlay}>
                   <Icon name="play-outline" size={12} color={colors.white} style={styles.playIcon} />
-                  <Text style={styles.gridLikesText}>{video.likes}</Text>
+                  <Text style={styles.gridLikesText}>
+                    {video.views !== undefined ? video.views : Math.floor(video.likes * 4.2) + 24}
+                  </Text>
                 </View>
               </TouchableOpacity>
             ))}
@@ -431,7 +514,20 @@ const ProfileScreen = () => {
               {/* Profile Image Select */}
               <View style={styles.editAvatarSection}>
                 <Image source={{ uri: editPhotoURL }} style={styles.editAvatarPreview} />
-                <Text style={styles.editAvatarLabel}>Choisissez une photo de profil :</Text>
+                
+                {/* Camera / Gallery Selection */}
+                <View style={styles.uploadImageButtonsRow}>
+                  <TouchableOpacity style={styles.uploadImageBtn} onPress={handleLaunchCamera}>
+                    <Icon name="camera" size={16} color={colors.white} style={{ marginRight: 6 }} />
+                    <Text style={styles.uploadImageBtnText}>Prendre une photo</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.uploadImageBtn} onPress={handleLaunchGallery}>
+                    <Icon name="image" size={16} color={colors.white} style={{ marginRight: 6 }} />
+                    <Text style={styles.uploadImageBtnText}>Galerie</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <Text style={styles.editAvatarLabel}>Ou choisissez un avatar prédéfini :</Text>
                 <View style={styles.presetAvatarsContainer}>
                   {PRESET_AVATARS.map((url, i) => (
                     <TouchableOpacity 
@@ -475,6 +571,21 @@ const ProfileScreen = () => {
                   maxLength={80}
                 />
               </View>
+
+              {/* Input Website */}
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputLabel}>Site web (Lien)</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={editWebsite}
+                  onChangeText={setEditWebsite}
+                  placeholder="https://votre-site-web.com"
+                  placeholderTextColor="rgba(255,255,255,0.4)"
+                  maxLength={100}
+                  autoCapitalize="none"
+                  keyboardType="url"
+                />
+              </View>
             </ScrollView>
           </View>
         </KeyboardAvoidingView>
@@ -488,27 +599,111 @@ const ProfileScreen = () => {
         onRequestClose={() => setPreviewVideo(null)}
       >
         <View style={styles.previewOverlay}>
-          <TouchableOpacity 
-            style={styles.previewCloseBtn} 
-            onPress={() => setPreviewVideo(null)}
-          >
-            <Icon name="close" size={28} color={colors.white} />
-          </TouchableOpacity>
-          
           {previewVideo && (
-            <View style={styles.previewVideoContainer}>
+            <View style={styles.previewVideoWrapper}>
               <Video
-                source={{ uri: previewVideo.videoUrl }}
+                source={{
+                  uri: previewVideo.videoUrl,
+                  ...(previewVideo.videoUrl?.includes('.m3u8') && { type: 'application/x-mpegurl' }),
+                }}
                 style={styles.previewVideoPlayer}
-                resizeMode="contain"
+                resizeMode="cover"
                 repeat={true}
                 paused={false}
                 muted={false}
                 onError={(e) => console.log('Preview Video Error:', e)}
               />
-              <View style={styles.previewDetails}>
-                <Text style={styles.previewUser}>@{previewVideo.username}</Text>
-                <Text style={styles.previewDesc}>{previewVideo.description}</Text>
+
+              <TouchableOpacity 
+                style={styles.previewCloseBtn} 
+                onPress={() => setPreviewVideo(null)}
+              >
+                <Icon name="chevron-back" size={28} color={colors.white} />
+              </TouchableOpacity>
+
+              {/* Action buttons on the right side */}
+              <View style={styles.previewRightActions}>
+                {/* Like Button */}
+                <TouchableOpacity 
+                  style={styles.previewActionBtn} 
+                  onPress={() => {
+                    toggleLike(previewVideo.id);
+                  }}
+                >
+                  <View style={styles.previewActionIconWrapper}>
+                    <Icon
+                      name={likedIds.includes(previewVideo.id) ? 'heart' : 'heart-outline'}
+                      size={32}
+                      color={likedIds.includes(previewVideo.id) ? colors.error : colors.white}
+                    />
+                  </View>
+                  <Text style={styles.previewActionCount}>
+                    {previewVideo.likes + (likedIds.includes(previewVideo.id) ? 1 : 0)}
+                  </Text>
+                </TouchableOpacity>
+
+                {/* Comment Button */}
+                <TouchableOpacity 
+                  style={styles.previewActionBtn} 
+                  onPress={() => Alert.alert('Commentaires', 'Cette fonctionnalité sera bientôt intégrée au lecteur de détails ! 💬')}
+                >
+                  <View style={styles.previewActionIconWrapper}>
+                    <Icon name="chatbubble-ellipses" size={30} color={colors.white} />
+                  </View>
+                  <Text style={styles.previewActionCount}>{previewVideo.commentsCount}</Text>
+                </TouchableOpacity>
+
+                {/* Bookmark Button */}
+                <TouchableOpacity 
+                  style={styles.previewActionBtn} 
+                  onPress={() => {
+                    toggleBookmark(previewVideo.id);
+                  }}
+                >
+                  <View style={styles.previewActionIconWrapper}>
+                    <Icon
+                      name={bookmarkedIds.includes(previewVideo.id) ? 'bookmark' : 'bookmark-outline'}
+                      size={28}
+                      color={bookmarkedIds.includes(previewVideo.id) ? colors.accent : colors.white}
+                    />
+                  </View>
+                  <Text style={styles.previewActionCount}>
+                    {previewVideo.bookmarks + (bookmarkedIds.includes(previewVideo.id) ? 1 : 0)}
+                  </Text>
+                </TouchableOpacity>
+
+                {/* Share Button */}
+                <TouchableOpacity 
+                  style={styles.previewActionBtn} 
+                  onPress={async () => {
+                    try {
+                      await Share.share({
+                        message: `Découvre cette vidéo sur StreamSky de @${previewVideo.username} : ${previewVideo.videoUrl}`,
+                      });
+                    } catch (e) {
+                      console.log('Share preview error:', e);
+                    }
+                  }}
+                >
+                  <View style={styles.previewActionIconWrapper}>
+                    <Icon name="share-social" size={28} color={colors.white} />
+                  </View>
+                  <Text style={styles.previewActionCount}>{previewVideo.shares}</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Bottom metadata */}
+              <View style={styles.previewBottomMetadata}>
+                <Text style={styles.previewUserTag}>@{previewVideo.username}</Text>
+                <Text style={styles.previewVideoDesc} numberOfLines={2}>
+                  {previewVideo.description}
+                </Text>
+                <View style={styles.previewSongContainer}>
+                  <Icon name="musical-notes" size={14} color={colors.white} style={{ marginRight: 6 }} />
+                  <Text style={styles.previewSongText} numberOfLines={1}>
+                    {previewVideo.songName || 'Son original'}
+                  </Text>
+                </View>
               </View>
             </View>
           )}
@@ -546,6 +741,75 @@ const ProfileScreen = () => {
             </TouchableOpacity>
           </View>
         </View>
+      </Modal>
+      {/* Custom Publish Menu Modal */}
+      <Modal
+        visible={publishMenuVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setPublishMenuVisible(false)}
+      >
+        <TouchableOpacity 
+          style={styles.modalOverlay} 
+          activeOpacity={1} 
+          onPress={() => setPublishMenuVisible(false)}
+        >
+          <View style={styles.publishMenuContent} onStartShouldSetResponder={() => true}>
+            <View style={styles.publishMenuHeader}>
+              <View style={styles.headerBar} />
+              <Text style={styles.publishMenuTitle}>Créer du contenu</Text>
+              <Text style={styles.publishMenuSubtitle}>Choisissez le type de publication ou d'action</Text>
+            </View>
+
+            <View style={styles.publishOptionsRow}>
+              <TouchableOpacity 
+                style={styles.publishOptionItem} 
+                onPress={() => {
+                  setPublishMenuVisible(false);
+                  openPublishVideo();
+                }}
+              >
+                <View style={[styles.publishOptionIconBg, { backgroundColor: colors.primary }]}>
+                  <Icon name="videocam" size={24} color={colors.black} />
+                </View>
+                <Text style={styles.publishOptionLabel}>Publier une Vidéo 🎬</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={styles.publishOptionItem} 
+                onPress={() => {
+                  setPublishMenuVisible(false);
+                  openPublishStory();
+                }}
+              >
+                <View style={[styles.publishOptionIconBg, { backgroundColor: colors.secondary }]}>
+                  <Icon name="flash" size={24} color={colors.white} />
+                </View>
+                <Text style={styles.publishOptionLabel}>Créer une Story ✨</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={styles.publishOptionItem} 
+                onPress={() => {
+                  setPublishMenuVisible(false);
+                  openEditProfile();
+                }}
+              >
+                <View style={[styles.publishOptionIconBg, { backgroundColor: colors.surfaceLight }]}>
+                  <Icon name="person" size={24} color={colors.white} />
+                </View>
+                <Text style={styles.publishOptionLabel}>Modifier le profil 👤</Text>
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity 
+              style={styles.cancelPublishBtn} 
+              onPress={() => setPublishMenuVisible(false)}
+            >
+              <Text style={styles.cancelPublishText}>Annuler</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
       </Modal>
     </View>
   );
@@ -1025,6 +1289,227 @@ const styles = StyleSheet.create({
     color: colors.white,
     fontWeight: '700',
     fontSize: 14,
+  },
+  // Bio Container Styles
+  bioContainer: {
+    alignItems: 'center',
+    paddingHorizontal: 32,
+    marginVertical: 12,
+    width: '100%',
+  },
+  bioText: {
+    color: colors.white,
+    fontSize: 13.5,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 6,
+  },
+  linkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  clickableLink: {
+    color: colors.primary,
+    fontSize: 13,
+    fontWeight: '600',
+    marginLeft: 4,
+    textDecorationLine: 'underline',
+  },
+  briefTextContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+  },
+  briefText: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontWeight: '600',
+  },
+
+  // Edit profile upload buttons style
+  uploadImageButtonsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 8,
+    marginBottom: 16,
+  },
+  uploadImageBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surfaceLight,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  uploadImageBtnText: {
+    color: colors.white,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+
+  // Video Preview styles
+  previewVideoWrapper: {
+    width: '100%',
+    height: '100%',
+    position: 'relative',
+    backgroundColor: colors.black,
+  },
+  previewRightActions: {
+    position: 'absolute',
+    bottom: 80,
+    right: 12,
+    alignItems: 'center',
+    gap: 14,
+    zIndex: 10,
+  },
+  previewActionBtn: {
+    alignItems: 'center',
+  },
+  previewActionIconWrapper: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  previewActionCount: {
+    color: colors.white,
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 4,
+    textShadowColor: 'rgba(0, 0, 0, 0.6)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  previewBottomMetadata: {
+    position: 'absolute',
+    bottom: 24,
+    left: 16,
+    right: 76,
+    zIndex: 10,
+  },
+  previewUserTag: {
+    color: colors.white,
+    fontSize: 15,
+    fontWeight: '700',
+    marginBottom: 4,
+    textShadowColor: 'rgba(0, 0, 0, 0.6)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  previewVideoDesc: {
+    color: colors.white,
+    fontSize: 13.5,
+    lineHeight: 18,
+    marginBottom: 8,
+    textShadowColor: 'rgba(0, 0, 0, 0.6)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  previewSongContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  previewSongText: {
+    color: colors.white,
+    fontSize: 12,
+    textShadowColor: 'rgba(0, 0, 0, 0.6)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+
+  // Custom publish options menu styles
+  publishMenuContent: {
+    backgroundColor: '#1E152E',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    width: '100%',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  publishMenuHeader: {
+    alignItems: 'center',
+    width: '100%',
+    marginBottom: 20,
+  },
+  headerBar: {
+    width: 36,
+    height: 4,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 2,
+    marginBottom: 16,
+  },
+  publishMenuTitle: {
+    color: colors.white,
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  publishMenuSubtitle: {
+    color: colors.textSecondary,
+    fontSize: 12.5,
+    textAlign: 'center',
+  },
+  publishOptionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    paddingHorizontal: 8,
+    marginBottom: 24,
+    gap: 12,
+  },
+  publishOptionItem: {
+    flex: 1,
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    borderRadius: 12,
+    paddingVertical: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.04)',
+  },
+  publishOptionIconBg: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 4,
+  },
+  publishOptionLabel: {
+    color: colors.white,
+    fontSize: 11,
+    fontWeight: '700',
+    textAlign: 'center',
+    paddingHorizontal: 4,
+  },
+  cancelPublishBtn: {
+    backgroundColor: colors.surface,
+    width: '100%',
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
+  },
+  cancelPublishText: {
+    color: colors.white,
+    fontWeight: '700',
+    fontSize: 14.5,
   },
 });
 
